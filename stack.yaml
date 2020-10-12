@@ -44,6 +44,8 @@ extra-deps:
   commit: ff87b9b7e59b906d9f09512d25bd975987aed6b4
 #- compdata-0.12@sha256:557525e94a6617581693b2c64b96e3073476c837b28642f1a76ab6b79bf7b7e6,9538
 - tree-view-0.5@sha256:85fbc67b53c1ef47f020a69051e6a29b27481698fe802cd2ed8ab0108aa69a38,1231
+- github: hengchu/compdata-param
+  commit: a04b283c4b01125fd60797831d8102f3ad73be3e
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
