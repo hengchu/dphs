@@ -25,9 +25,30 @@ type Bag   a = [a]
 class (Show a, Eq a, Ord a, Typeable a) => FuzziLit a where
 
 data ExprF :: (* -> *) -> * -> * where
-  Deref :: Typeable a => Variable a               -> ExprF r (FuzziM a)
-  Index :: r (FuzziM (Array a)) -> r (FuzziM Int) -> ExprF r (FuzziM a)
-  Lit   :: FuzziLit a => a                        -> ExprF r (FuzziM a)
+  -- |Dereference a variable.
+  Deref :: Typeable a
+        => Variable a
+        -> ExprF r (FuzziM a)
+
+  -- |Index into a term.
+  Index :: r (FuzziM (Array a))
+        -> r (FuzziM Int)
+        -> ExprF r (FuzziM a)
+
+  -- |Literal structure values.
+  Lit   :: FuzziLit a
+        => a
+        -> ExprF r (FuzziM a)
+
+data PrivMechF :: (* -> *) -> * -> * where
+  Laplace :: r (FuzziM Double)
+          -> r (FuzziM Double)
+          -> PrivMechF r (FuzziM Double)
+
+$(derive [makeHFunctor, makeHFoldable, makeHTraversable,
+          makeShowHF, makeEqHF, makeOrdHF,
+          smartConstructors, smartAConstructors]
+         [''PrivMechF])
 
 instance EqHF ExprF where
   eqHF (Deref (v1 :: Variable a1)) (Deref (v2 :: Variable a2)) =
@@ -87,6 +108,37 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
           makeShowHF, makeEqHF, makeOrdHF,
           smartConstructors, smartAConstructors]
          [''EffF])
+
+type FuzziF  = ArithF :+: ExprF :+: PrivMechF :+: EffF :+: XLambdaF :+: XMonadF
+type Fuzzi f = Context FuzziF f
+
+assign :: forall f a.
+          Fuzzi f (FuzziM a)
+       -> Fuzzi f (FuzziM a)
+       -> EmMon (Fuzzi f) FuzziM ()
+assign lhs rhs = fromDeepRepr $ iAssign lhs rhs
+
+laplace :: forall f.
+           Fuzzi f (FuzziM Double)
+        -> Fuzzi f (FuzziM Double)
+        -> Fuzzi f (FuzziM Double)
+laplace width center = iLaplace width center
+
+{-
+x :: Variable Double
+x = Variable ()
+
+xx :: forall f. Fuzzi f (FuzziM Double)
+xx = iDeref x
+
+ex1 :: forall f. Mon (Fuzzi f) FuzziM (Fuzzi f ())
+ex1 = assign (xx @f) (xx @f)
+
+ex2 :: forall f. EmMon (Fuzzi f) FuzziM ()
+ex2 = do
+  assign xx (laplace 1.0 0.0)
+  assign xx (xx + 1.0)
+-}
 
 instance Num a => Num (FuzziM a) where
   (+) = liftM2 (+)

@@ -12,6 +12,9 @@ class Syntactic (f :: * -> *) a where
 newtype Mon f m a = Mon {runMon :: forall b. Typeable b => (a -> f (m b)) -> f (m b)}
   deriving (Functor)
 
+-- | Type synonym for an embedded monadic value.
+type EmMon f m a = Mon f m (f a)
+
 instance Applicative (Mon f m) where
   pure a = Mon $ \k -> k a
   f <*> a = f >>= \f' -> a >>= \a' -> return (f' a')
