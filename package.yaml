@@ -1,10 +1,10 @@
 name:                dphs
 version:             0.1.0.0
-github:              "githubuser/dphs"
+github:              "hengchu/dphs"
 license:             BSD3
-author:              "Author name here"
-maintainer:          "example@example.com"
-copyright:           "2020 Author name here"
+author:              "Hengchu Zhang"
+maintainer:          "hengchu@seas.upenn.edu"
+copyright:           "2020 Hengchu Zhang"
 
 extra-source-files:
 - README.md
