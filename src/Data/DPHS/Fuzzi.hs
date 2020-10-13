@@ -75,6 +75,31 @@ compareList (_:_)  []     = GT
 compareList []     (_:_)  = LT
 compareList (x:xs) (y:ys) = kcompare x y <> compareList xs ys
 
+data ExtensionF :: (* -> *) -> * -> * where
+  BMap :: r (FuzziM (Bag a))
+       -> r (FuzziM a -> FuzziM b)
+       -> ExtensionF r (FuzziM (Bag b))
+  BSum :: Double
+       -> r (FuzziM (Bag Double))
+       -> ExtensionF r (FuzziM Double)
+  AMap :: r (FuzziM (Array a))
+       -> r (FuzziM a -> FuzziM b)
+       -> ExtensionF r (FuzziM (Array b))
+  Part :: Int
+       -> r (FuzziM (Bag a))
+       -> r (FuzziM a -> FuzziM Int)
+       -> ExtensionF r (FuzziM (Array (Bag a)))
+
+  AdvComp :: Variable Int  -- ^ iteration variable
+          -> Int           -- ^ total number of iterations
+          -> r (FuzziM ()) -- ^ loop body
+          -> ExtensionF r (FuzziM ())
+
+$(derive [makeHFunctor, makeHFoldable, makeHTraversable,
+          makeShowHF, makeEqHF, makeOrdHF,
+          smartConstructors, smartAConstructors]
+         [''ExtensionF])
+
 data PrivMechF :: (* -> *) -> * -> * where
   Laplace :: r (FuzziM Double)
           -> r (FuzziM Double)
@@ -105,6 +130,7 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
 type FuzziF = ArithF :+: CompareF :+: ExprF
               :+: PrivMechF :+: EffF :+: XLambdaF
               :+: XMonadF
+              :+: ExtensionF
 type Fuzzi f = Context FuzziF f
 
 assign :: forall f a.
@@ -151,6 +177,28 @@ laplace :: forall f.
         -> Fuzzi f (FuzziM Double)
         -> Fuzzi f (FuzziM Double)
 laplace width center = iLaplace width center
+
+bmap :: forall f a b.
+        (Typeable a, Typeable b)
+     => Fuzzi f (FuzziM (Bag a))
+     -> (Fuzzi f (FuzziM a) -> Fuzzi f (FuzziM b))
+     -> Fuzzi f (FuzziM (Bag b))
+bmap input f = iBMap input (toDeepRepr f)
+
+amap :: forall f a b.
+        (Typeable a, Typeable b)
+     => Fuzzi f (FuzziM (Array a))
+     -> (Fuzzi f (FuzziM a) -> Fuzzi f (FuzziM b))
+     -> Fuzzi f (FuzziM (Array b))
+amap input f = iAMap input (toDeepRepr f)
+
+ac :: forall f.
+      Variable Int
+   -> Int
+   -> EmMon (Fuzzi f) FuzziM ()
+   -> EmMon (Fuzzi f) FuzziM ()
+ac i n iter =
+  fromDeepRepr @(Fuzzi f) $ iAdvComp i n (toDeepRepr iter)
 
 instance Num a => Num (FuzziM a) where
   (+) = liftM2 (+)
