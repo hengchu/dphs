@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 1140e00e601eb6228373c5aabbfacbc784135331db446f2279c6473c4e1ef553
+-- hash: 8111f6dd8dc8dc13995190d40d23494908e269fc67696e1a84752f94b3dadd35
 
 name:           dphs
 version:        0.1.0.0
@@ -27,11 +27,13 @@ source-repository head
 
 library
   exposed-modules:
+      Data.DPHS.Examples.Fuzzi
       Data.DPHS.Fuzzi
       Data.DPHS.HXFunctor
       Data.DPHS.Name
       Data.DPHS.Syntactic
       Data.DPHS.Syntax
+      Data.DPHS.Types
       Lib
   other-modules:
       Paths_dphs

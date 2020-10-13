@@ -2,7 +2,7 @@
 
 module Data.DPHS.Syntax where
 
-import Type.Reflection
+import Type.Reflection hiding (App)
 
 import Data.DPHS.Name
 import Data.DPHS.HXFunctor
@@ -11,15 +11,47 @@ import Data.DPHS.Syntactic
 import Data.Comp.Multi
 import Data.Comp.Multi.Show ()
 import Data.Comp.Multi.Equality ()
-import Data.Comp.Multi.Ordering ()
+import Data.Comp.Multi.Ordering (KOrd(..))
 import Data.Comp.Multi.Derive
 
 newtype Variable a = Variable Name
   deriving (Show, Eq, Ord)
 
+heq :: forall a b. (Typeable a, Typeable b) => Variable a -> Variable b -> Bool
+heq va vb =
+  case eqTypeRep (typeRep @a) (typeRep @b) of
+    Just HRefl -> va == vb
+    Nothing -> False
+
+hcompare :: forall a b. (Typeable a, Typeable b) => Variable a -> Variable b -> Ordering
+hcompare va vb =
+  case eqTypeRep tr1 tr2 of
+    Just HRefl -> compare va vb
+    Nothing -> compare (SomeTypeRep tr1) (SomeTypeRep tr2)
+  where tr1 = typeRep @a
+        tr2 = typeRep @b
+
 class Integralite a where
   idiv :: a -> a -> a
   imod :: a -> a -> a
+
+infixr 2 .||
+infixr 3 .&&
+infix  4 .==, ./=, .<, .<=, .>, .>=
+class SynBool a where
+  neg   :: a -> a
+  (.&&) :: a -> a -> a
+  (.||) :: a -> a -> a
+
+class SynBool (Cmp a) => SynOrd a where
+  type Cmp a :: *
+
+  (.==) :: a -> a -> Cmp a
+  (./=) :: a -> a -> Cmp a
+  (.<)  :: a -> a -> Cmp a
+  (.<=) :: a -> a -> Cmp a
+  (.>)  :: a -> a -> Cmp a
+  (.>=) :: a -> a -> Cmp a
 
 -- |Basic arithmetic operations.
 data ArithF :: (* -> *) -> * -> * where
@@ -42,9 +74,27 @@ data ArithF :: (* -> *) -> * -> * where
   Sqrt :: Floating a => r a -> ArithF r a
 
 $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
-          makeShowHF, --makeEqHF, makeOrdHF,
+          makeShowHF, makeEqHF, makeOrdHF,
           smartConstructors, smartAConstructors]
          [''ArithF])
+
+-- |Basic comparison and boolean operations.
+data CompareF :: (* -> *) -> * -> * where
+  IsEq  :: SynOrd a => r a -> r a -> CompareF r (Cmp a)
+  IsNeq :: SynOrd a => r a -> r a -> CompareF r (Cmp a)
+  IsLt  :: SynOrd a => r a -> r a -> CompareF r (Cmp a)
+  IsLe  :: SynOrd a => r a -> r a -> CompareF r (Cmp a)
+  IsGt  :: SynOrd a => r a -> r a -> CompareF r (Cmp a)
+  IsGe  :: SynOrd a => r a -> r a -> CompareF r (Cmp a)
+
+  Neg   :: SynBool bool => r bool           -> CompareF r bool
+  And   :: SynBool bool => r bool -> r bool -> CompareF r bool
+  Or    :: SynBool bool => r bool -> r bool -> CompareF r bool
+
+$(derive [makeHFunctor, makeHFoldable, makeHTraversable,
+          makeShowHF, makeEqHF, makeOrdHF,
+          smartConstructors, smartAConstructors]
+         [''CompareF])
 
 -- |Embedded monadic syntax.
 data XMonadF :: (* -> *) -> * -> * where
@@ -95,22 +145,58 @@ instance ( Typeable (DeepRepr a),
 
 -- |Named monadic expression representation.
 data MonadF :: (* -> *) -> * -> * where
-  Bind :: Monad m => r (m a) -> Variable a -> r (m b) -> MonadF r (m b)
-  Ret  :: Monad m => r a -> MonadF r (m a)
+  Bind :: (Typeable a, Monad m) => r (m a) -> Variable a -> r (m b) -> MonadF r (m b)
+  Ret  :: (Typeable a, Monad m) => r a -> MonadF r (m a)
+
+instance EqHF MonadF where
+  eqHF (Bind ma1 x1 kbody1) (Bind ma2 x2 kbody2) =
+    keq ma1 ma2 && heq x1 x2 && keq kbody1 kbody2
+  eqHF (Bind _ _ _) _ = False
+
+  eqHF (Ret a1) (Ret a2) = keq a1 a2
+  eqHF (Ret _) _ = False
+
+instance OrdHF MonadF where
+  compareHF (Bind ma1 x1 kbody1) (Bind ma2 x2 kbody2) =
+    kcompare ma1 ma2 <> hcompare x1 x2 <> kcompare kbody1 kbody2
+  compareHF (Bind _ _ _) (Ret _) = LT
+
+  compareHF (Ret a1) (Ret a2) = kcompare a1 a2
+  compareHF (Ret _) (Bind _ _ _) = GT
 
 $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
-          makeShowHF, --makeEqHF, makeOrdHF,
+          makeShowHF,
           smartConstructors, smartAConstructors]
          [''MonadF])
 
 -- |Named lambda calculus representation.
 data LambdaF :: (* -> *) -> * -> * where
-  Lam :: Variable a -> r b -> LambdaF r (a -> b)
+  Lam :: Typeable a => Variable a -> r b -> LambdaF r (a -> b)
   App :: r (a -> b) -> r a -> LambdaF r b
-  Var :: Variable a -> LambdaF r a
+  Var :: Typeable a => Variable a -> LambdaF r a
+
+instance EqHF LambdaF where
+  eqHF (Lam x1 body1) (Lam x2 body2) = heq x1 x2 && keq body1 body2
+  eqHF (App f1 arg1) (App f2 arg2) = keq f1 f2 && keq arg1 arg2
+  eqHF (Var v1) (Var v2) = heq v1 v2
+  eqHF _ _ = False
+
+instance OrdHF LambdaF where
+  compareHF (Lam x1 body1) (Lam x2 body2) =
+    hcompare x1 x2 <> kcompare body1 body2
+  compareHF (Lam _ _) _ = LT
+
+  compareHF (App _ _) (Lam _ _) = GT
+  compareHF (App f1 arg1) (App f2 arg2) =
+    kcompare f1 f2 <> kcompare arg1 arg2
+  compareHF (App _ _) (Var _) = LT
+
+  compareHF (Var _) (Lam _ _) = GT
+  compareHF (Var _) (App _ _) = GT
+  compareHF (Var v1) (Var v2) = hcompare v1 v2
 
 $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
-          makeShowHF, --makeEqHF, makeOrdHF,
+          makeShowHF,
           smartConstructors, smartAConstructors]
          [''LambdaF])
 
@@ -129,3 +215,52 @@ instance (Fractional a, ArithF :<: lang) => Fractional (Cxt hole lang f a) where
 instance (Integralite a, ArithF :<: lang) => Integralite (Cxt hole lang f a) where
   idiv = iIDiv
   imod = iIMod
+
+instance (SynBool a, CompareF :<: lang) => SynBool (Cxt hole lang f a) where
+  neg = iNeg
+  (.&&) = iAnd
+  (.||) = iOr
+
+instance (SynOrd a, CompareF :<: lang) => SynOrd (Cxt hole lang f a) where
+  type Cmp (Cxt hole lang f a) = Cxt hole lang f (Cmp a)
+  (.==) = iIsEq
+  (./=) = iIsNeq
+  (.<) = iIsLt
+  (.<=) = iIsLe
+  (.>) = iIsGt
+  (.>=) = iIsGe
+
+instance SynBool Bool where
+  neg = not
+  (.&&) = (&&)
+  (.||) = (||)
+
+instance SynOrd Double where
+  type Cmp Double = Bool
+
+  (.==) = (==)
+  (./=) = (/=)
+  (.<)  = (<)
+  (.<=) = (<=)
+  (.>)  = (>)
+  (.>=) = (>=)
+
+instance SynOrd Int where
+  type Cmp Int = Bool
+
+  (.==) = (==)
+  (./=) = (/=)
+  (.<)  = (<)
+  (.<=) = (<=)
+  (.>)  = (>)
+  (.>=) = (>=)
+
+instance SynOrd Integer where
+  type Cmp Integer = Bool
+
+  (.==) = (==)
+  (./=) = (/=)
+  (.<)  = (<)
+  (.<=) = (<=)
+  (.>)  = (>)
+  (.>=) = (>=)

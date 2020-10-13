@@ -7,6 +7,7 @@ import Type.Reflection
 
 import Data.DPHS.Syntax
 import Data.DPHS.Syntactic
+import Data.DPHS.Types
 
 import Data.Comp.Multi
 import Data.Comp.Multi.Show ()
@@ -19,52 +20,37 @@ import Data.Functor.Identity
 newtype FuzziM a = FuzziM { runFuzziM :: Identity a }
   deriving (Functor, Applicative, Monad)
 
-type Array a = [a]
-type Bag   a = [a]
-
-class (Show a, Eq a, Ord a, Typeable a) => FuzziLit a where
-
 data ExprF :: (* -> *) -> * -> * where
   -- |Dereference a variable.
   Deref :: Typeable a
         => Variable a
         -> ExprF r (FuzziM a)
 
-  -- |Index into a term.
+  -- |Index into an array.
   Index :: r (FuzziM (Array a))
         -> r (FuzziM Int)
         -> ExprF r (FuzziM a)
 
-  -- |Literal structure values.
-  Lit   :: FuzziLit a
-        => a
-        -> ExprF r (FuzziM a)
-
-data PrivMechF :: (* -> *) -> * -> * where
-  Laplace :: r (FuzziM Double)
-          -> r (FuzziM Double)
-          -> PrivMechF r (FuzziM Double)
+  -- |Literal array value.
+  ArrLit :: [r (FuzziM a)]
+         -> ExprF r (FuzziM (Array a))
 
 $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
-          makeShowHF, makeEqHF, makeOrdHF,
           smartConstructors, smartAConstructors]
-         [''PrivMechF])
+         [''ExprF])
 
 instance EqHF ExprF where
   eqHF (Deref (v1 :: Variable a1)) (Deref (v2 :: Variable a2)) =
     case eqTypeRep (typeRep @a1) (typeRep @a2) of
       Just HRefl -> v1 == v2
       Nothing -> False
-  eqHF (Deref _) _ = False
 
   eqHF (Index a1 idx1) (Index a2 idx2) = keq a1 a2 && keq idx1 idx2
-  eqHF (Index _ _) _ = False
 
-  eqHF (Lit (a1 :: a1)) (Lit (a2 :: a2)) =
-    case eqTypeRep (typeRep @a1) (typeRep @a2) of
-      Just HRefl -> a1 == a2
-      Nothing -> False
-  eqHF (Lit _) _ = False
+  eqHF (ArrLit vs1) (ArrLit vs2) =
+    length vs1 == length vs2 && all (uncurry keq) (zip vs1 vs2)
+
+  eqHF _ _ = False
 
 instance OrdHF ExprF where
   compareHF (Deref (v1 :: Variable a1)) (Deref (v2 :: Variable a2)) =
@@ -79,18 +65,25 @@ instance OrdHF ExprF where
   compareHF (Index a1 idx1) (Index a2 idx2) = kcompare a1 a2 <> kcompare idx1 idx2
   compareHF (Index _ _) _ = LT
 
-  compareHF (Lit (v1 :: a1)) (Lit (v2 :: a2)) =
-    case eqTypeRep tr1 tr2 of
-      Just HRefl -> compare v1 v2
-      Nothing -> compare (SomeTypeRep tr1) (SomeTypeRep tr2)
-    where tr1 = typeRep @a1
-          tr2 = typeRep @a2
-  compareHF (Lit _) _ = GT
+  compareHF (ArrLit _) (Deref _) = GT
+  compareHF (ArrLit _) (Index _ _) = GT
+  compareHF (ArrLit vs1) (ArrLit vs2) = compareList vs1 vs2
+
+compareList :: KOrd r => [r a] -> [r b] -> Ordering
+compareList []     []     = EQ
+compareList (_:_)  []     = GT
+compareList []     (_:_)  = LT
+compareList (x:xs) (y:ys) = kcompare x y <> compareList xs ys
+
+data PrivMechF :: (* -> *) -> * -> * where
+  Laplace :: r (FuzziM Double)
+          -> r (FuzziM Double)
+          -> PrivMechF r (FuzziM Double)
 
 $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
-          makeShowHF, --makeEqHF, makeOrdHF,
+          makeShowHF, makeEqHF, makeOrdHF,
           smartConstructors, smartAConstructors]
-         [''ExprF])
+         [''PrivMechF])
 
 data EffF :: (* -> *) -> * -> * where
   Assign :: r (FuzziM a)            -- ^ the lhs expression to be assigned
@@ -109,36 +102,55 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
           smartConstructors, smartAConstructors]
          [''EffF])
 
-type FuzziF  = ArithF :+: ExprF :+: PrivMechF :+: EffF :+: XLambdaF :+: XMonadF
+type FuzziF = ArithF :+: CompareF :+: ExprF
+              :+: PrivMechF :+: EffF :+: XLambdaF
+              :+: XMonadF
 type Fuzzi f = Context FuzziF f
 
 assign :: forall f a.
           Fuzzi f (FuzziM a)
        -> Fuzzi f (FuzziM a)
        -> EmMon (Fuzzi f) FuzziM ()
-assign lhs rhs = fromDeepRepr $ iAssign lhs rhs
+assign lhs rhs =
+  fromDeepRepr $ iAssign lhs rhs
+
+while :: forall f.
+         Fuzzi f (FuzziM Bool)
+      -> EmMon (Fuzzi f) FuzziM ()
+      -> EmMon (Fuzzi f) FuzziM ()
+while cond body =
+  fromDeepRepr $ iWhile cond (toDeepRepr body)
+
+if_ :: forall f.
+       Fuzzi f (FuzziM Bool)
+    -> EmMon (Fuzzi f) FuzziM ()
+    -> EmMon (Fuzzi f) FuzziM ()
+    -> EmMon (Fuzzi f) FuzziM ()
+if_ cond ct cf =
+  fromDeepRepr $ iBranch cond (toDeepRepr ct) (toDeepRepr cf)
+
+v :: Typeable a => Variable a -> Fuzzi f (FuzziM a)
+v = iDeref
+
+infixl 9 .!!
+(.!!) :: forall f a.
+         Fuzzi f (FuzziM (Array a))
+      -> Fuzzi f (FuzziM Int)
+      -> Fuzzi f (FuzziM a)
+(.!!) = iIndex
+
+infix 4 .=
+(.=) :: forall f a.
+        Fuzzi f (FuzziM a)
+     -> Fuzzi f (FuzziM a)
+     -> EmMon (Fuzzi f) FuzziM ()
+(.=) = assign
 
 laplace :: forall f.
            Fuzzi f (FuzziM Double)
         -> Fuzzi f (FuzziM Double)
         -> Fuzzi f (FuzziM Double)
 laplace width center = iLaplace width center
-
-{-
-x :: Variable Double
-x = Variable ()
-
-xx :: forall f. Fuzzi f (FuzziM Double)
-xx = iDeref x
-
-ex1 :: forall f. Mon (Fuzzi f) FuzziM (Fuzzi f ())
-ex1 = assign (xx @f) (xx @f)
-
-ex2 :: forall f. EmMon (Fuzzi f) FuzziM ()
-ex2 = do
-  assign xx (laplace 1.0 0.0)
-  assign xx (xx + 1.0)
--}
 
 instance Num a => Num (FuzziM a) where
   (+) = liftM2 (+)
@@ -147,6 +159,21 @@ instance Num a => Num (FuzziM a) where
   signum = fmap signum
   fromInteger = return . fromInteger
   negate = fmap negate
+
+instance SynBool a => SynBool (FuzziM a) where
+  neg = fmap neg
+  (.&&) = liftM2 (.&&)
+  (.||) = liftM2 (.||)
+
+instance SynOrd a => SynOrd (FuzziM a) where
+  type Cmp (FuzziM a) = FuzziM (Cmp a)
+
+  (.==) = liftM2 (.==)
+  (./=) = liftM2 (./=)
+  (.<)  = liftM2 (.<)
+  (.<=) = liftM2 (.<=)
+  (.>)  = liftM2 (.>)
+  (.>=) = liftM2 (.>=)
 
 instance Integralite a => Integralite (FuzziM a) where
   idiv = liftM2 idiv
