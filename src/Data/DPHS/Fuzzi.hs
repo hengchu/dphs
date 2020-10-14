@@ -2,9 +2,11 @@
 
 module Data.DPHS.Fuzzi where
 
+import Data.Functor.Compose
 import Control.Monad
 import Type.Reflection
 
+import Data.DPHS.HXFunctor
 import Data.DPHS.Syntax
 import Data.DPHS.Syntactic
 import Data.DPHS.Types
@@ -118,9 +120,9 @@ data EffF :: (* -> *) -> * -> * where
          -> r (FuzziM ())           -- ^ true branch statements
          -> r (FuzziM ())           -- ^ false branch statements
          -> EffF r (FuzziM ())
-  While  :: r (FuzziM Bool) ->      -- ^ loop condition
-            r (FuzziM ()) ->        -- ^ loop body
-            EffF r (FuzziM ())
+  While  :: r (FuzziM Bool)         -- ^ loop condition
+         -> r (FuzziM ())           -- ^ loop body
+         -> EffF r (FuzziM ())
 
 $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
           makeShowHF, makeEqHF, makeOrdHF,
@@ -129,9 +131,15 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
 
 type FuzziF = ArithF :+: CompareF :+: ExprF
               :+: PrivMechF :+: EffF :+: XLambdaF
-              :+: XMonadF
+              :+: MonadF
               :+: ExtensionF
 type Fuzzi f = Context FuzziF f
+
+type NFuzziF = ArithF :+: CompareF :+: ExprF
+              :+: PrivMechF :+: EffF :+: LambdaF
+              :+: MonadF
+              :+: ExtensionF
+type NFuzzi f = Context NFuzziF f
 
 assign :: forall f a.
           Fuzzi f (FuzziM a)
@@ -250,3 +258,23 @@ instance Floating a => Floating (FuzziM a) where
   asinh = fmap asinh
   acosh = fmap acosh
   atanh = fmap atanh
+
+instance HOASToNamed ExprF NFuzziF where
+  hoasToNamedAlg (Deref var) = Compose . return $ iDeref var
+  hoasToNamedAlg (Index e idx) = Compose $ iIndex <$> getCompose e <*> getCompose idx
+  hoasToNamedAlg (ArrLit es) = Compose $ iArrLit <$> traverse getCompose es
+
+instance HOASToNamed ExtensionF NFuzziF where
+  hoasToNamedAlg (BMap input f) = Compose $ iBMap <$> getCompose input <*> getCompose f
+  hoasToNamedAlg (BSum clip input) = Compose $ iBSum clip <$> getCompose input
+  hoasToNamedAlg (AMap input f) = Compose $ iAMap <$> getCompose input <*> getCompose f
+  hoasToNamedAlg (Part nparts input partfun) = Compose $ iPart nparts <$> getCompose input <*> getCompose partfun
+  hoasToNamedAlg (AdvComp i niter body) = Compose $ iAdvComp i niter <$> getCompose body
+
+instance HOASToNamed PrivMechF NFuzziF where
+  hoasToNamedAlg (Laplace width center) = Compose $ iLaplace <$> getCompose width <*> getCompose center
+
+instance HOASToNamed EffF NFuzziF where
+  hoasToNamedAlg (Assign lhs rhs) = Compose $ iAssign <$> getCompose lhs <*> getCompose rhs
+  hoasToNamedAlg (Branch cond t f) = Compose $ iBranch <$> getCompose cond <*> getCompose t <*> getCompose f
+  hoasToNamedAlg (While cond body) = Compose $ iWhile <$> getCompose cond <*> getCompose body

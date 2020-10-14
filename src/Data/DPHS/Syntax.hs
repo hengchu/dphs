@@ -3,6 +3,7 @@
 module Data.DPHS.Syntax where
 
 import Type.Reflection hiding (App)
+import Data.Functor.Compose
 
 import Data.DPHS.Name
 import Data.DPHS.HXFunctor
@@ -78,6 +79,21 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
           smartConstructors, smartAConstructors]
          [''ArithF])
 
+instance ArithF :<: tgt => HOASToNamed ArithF tgt where
+  hoasToNamedAlg (IntLit v) = Compose . return $ iIntLit v
+  hoasToNamedAlg (FracLit v) = Compose . return $ iFracLit v
+  hoasToNamedAlg (Add v1 v2) = Compose $ iAdd <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (Sub v1 v2) = Compose $ iSub <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (Abs v) = Compose $ iAbs <$> getCompose v
+  hoasToNamedAlg (Signum v) = Compose $ iSignum <$> getCompose v
+  hoasToNamedAlg (Mult v1 v2) = Compose $ iMult <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (Div v1 v2) = Compose $ iDiv <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (IDiv v1 v2) = Compose $ iIDiv <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (IMod v1 v2) = Compose $ iIMod <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (Exp v) = Compose $ iExp <$> getCompose v
+  hoasToNamedAlg (Log v) = Compose $ iLog <$> getCompose v
+  hoasToNamedAlg (Sqrt v) = Compose $ iSqrt <$> getCompose v
+
 -- |Basic comparison and boolean operations.
 data CompareF :: (* -> *) -> * -> * where
   IsEq  :: SynOrd a => r a -> r a -> CompareF r (Cmp a)
@@ -96,14 +112,30 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
           smartConstructors, smartAConstructors]
          [''CompareF])
 
--- |Embedded monadic syntax.
-data XMonadF :: (* -> *) -> * -> * where
-  XBind :: Monad m => r (m a) -> (r a -> r (m b)) -> XMonadF r (m b)
-  XRet  :: Monad m => r a -> XMonadF r (m a)
+instance CompareF :<: tgt => HOASToNamed CompareF tgt where
+  hoasToNamedAlg (IsEq v1 v2) = Compose $ iIsEq <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (IsNeq v1 v2) = Compose $ iIsNeq <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (IsLt v1 v2) = Compose $ iIsLt <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (IsLe v1 v2) = Compose $ iIsLe <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (IsGt v1 v2) = Compose $ iIsGt <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (IsGe v1 v2) = Compose $ iIsGe <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (Neg v) = Compose $ iNeg <$> getCompose v
+  hoasToNamedAlg (And v1 v2) = Compose $ iAnd <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (Or v1 v2) = Compose $ iOr <$> getCompose v1 <*> getCompose v2
 
-instance HXFunctor XMonadF where
-  hxmap f g (XBind ma k) = XBind (f ma) (f . k . g)
-  hxmap f _ (XRet a)     = XRet (f a)
+-- |Embedded monadic syntax.
+data MonadF :: (* -> *) -> * -> * where
+  Bind :: Monad m => r (m a) -> r (a -> m b) -> MonadF r (m b)
+  Ret  :: Monad m => r a -> MonadF r (m a)
+
+$(derive [makeHFunctor, makeHFoldable, makeHTraversable,
+          makeShowHF, makeEqHF, makeOrdHF,
+          smartConstructors, smartAConstructors]
+         [''MonadF])
+
+instance MonadF :<: tgt => HOASToNamed MonadF tgt where
+  hoasToNamedAlg (Bind ma kont) = Compose $ iBind <$> getCompose ma <*> getCompose kont
+  hoasToNamedAlg (Ret a) = Compose $ iRet <$> getCompose a
 
 instance Syntactic (Cxt hole lang f) (Cxt hole lang f a) where
   type DeepRepr (Cxt hole lang f a) = a
@@ -113,18 +145,20 @@ instance Syntactic (Cxt hole lang f) (Cxt hole lang f a) where
 -- |Shallow monadic expressions are embedded through this catch-all instance.
 instance ( Syntactic (Cxt hole lang f) a,
            Typeable (DeepRepr a),
-           XMonadF :<: lang,
-           Monad m
+           MonadF :<: lang,
+           XLambdaF :<: lang,
+           Monad m,
+           Typeable m
          ) => Syntactic (Cxt hole lang f) (Mon (Cxt hole lang f) m a) where
   type DeepRepr (Mon (Cxt hole lang f) m a) = m (DeepRepr a)
-  toDeepRepr (Mon m) = m (Term . inj . XRet . toDeepRepr)
-  fromDeepRepr m = Mon $ \k -> Term . inj $ XBind m (k . fromDeepRepr)
+  toDeepRepr (Mon m) = m (Term . inj . Ret . toDeepRepr)
+  fromDeepRepr m = Mon $ \k -> Term . inj $ Bind m (toDeepRepr k)
 
 -- |Embedded lambda calculus.
 data XLambdaF :: (* -> *) -> * -> * where
-  XLam :: (r a -> r b) -> XLambdaF r (a -> b)
+  XLam :: Typeable a => (r a -> r b) -> XLambdaF r (a -> b)
   XApp :: r (a -> b) -> r a -> XLambdaF r b
-  XVar :: Variable a -> XLambdaF r a
+  XVar :: Typeable a => Variable a -> XLambdaF r a
 
 instance HXFunctor XLambdaF where
   hxmap f g (XLam lam) = XLam (f . lam . g)
@@ -142,32 +176,6 @@ instance ( Typeable (DeepRepr a),
   type DeepRepr (a -> b) = DeepRepr a -> DeepRepr b
   toDeepRepr f = Term . inj . XLam $ toDeepRepr . f . fromDeepRepr
   fromDeepRepr f = fromDeepRepr . (Term . inj . XApp f) . toDeepRepr
-
--- |Named monadic expression representation.
-data MonadF :: (* -> *) -> * -> * where
-  Bind :: (Typeable a, Monad m) => r (m a) -> Variable a -> r (m b) -> MonadF r (m b)
-  Ret  :: (Typeable a, Monad m) => r a -> MonadF r (m a)
-
-instance EqHF MonadF where
-  eqHF (Bind ma1 x1 kbody1) (Bind ma2 x2 kbody2) =
-    keq ma1 ma2 && heq x1 x2 && keq kbody1 kbody2
-  eqHF (Bind _ _ _) _ = False
-
-  eqHF (Ret a1) (Ret a2) = keq a1 a2
-  eqHF (Ret _) _ = False
-
-instance OrdHF MonadF where
-  compareHF (Bind ma1 x1 kbody1) (Bind ma2 x2 kbody2) =
-    kcompare ma1 ma2 <> hcompare x1 x2 <> kcompare kbody1 kbody2
-  compareHF (Bind _ _ _) (Ret _) = LT
-
-  compareHF (Ret a1) (Ret a2) = kcompare a1 a2
-  compareHF (Ret _) (Bind _ _ _) = GT
-
-$(derive [makeHFunctor, makeHFoldable, makeHTraversable,
-          makeShowHF,
-          smartConstructors, smartAConstructors]
-         [''MonadF])
 
 -- |Named lambda calculus representation.
 data LambdaF :: (* -> *) -> * -> * where
@@ -199,6 +207,14 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
           makeShowHF,
           smartConstructors, smartAConstructors]
          [''LambdaF])
+
+instance LambdaF :<: tgt => HOASToNamed XLambdaF tgt where
+  hoasToNamedAlg (XLam f) = Compose $ do
+    x <- Variable <$> gfresh "x"
+    body <- getCompose $ f (Compose . return . iVar $ x)
+    return (iLam x body)
+  hoasToNamedAlg (XApp f arg) = Compose $ iApp <$> getCompose f <*> getCompose arg
+  hoasToNamedAlg (XVar fv) = Compose . return $ iVar fv
 
 instance (Num a, ArithF :<: lang) => Num (Cxt hole lang f a) where
   (+) = iAdd

@@ -46,6 +46,10 @@ extra-deps:
 - tree-view-0.5@sha256:85fbc67b53c1ef47f020a69051e6a29b27481698fe802cd2ed8ab0108aa69a38,1231
 - github: hengchu/compdata-param
   commit: a04b283c4b01125fd60797831d8102f3ad73be3e
+- optics-0.3@sha256:5f62fca47b01ce065bb999724b8cdd45e747537892ee00faeac4b4b20d821aee,6494
+- optics-core-0.3.0.1@sha256:50845a47810eb5a5f03dfa9bb1edd8a577fc7ca1702ba4bde68b235f7cb44528,4536
+- optics-extra-0.3@sha256:b1b9917596a4305069aa95eaf3083afe88c6db3c84ed6f52e926c82d0c56eea9,3382
+- optics-th-0.3.0.2@sha256:e786f290c237a3236eda8814957da882227c05ed063d865d4ab1af08d638244f,2038
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
