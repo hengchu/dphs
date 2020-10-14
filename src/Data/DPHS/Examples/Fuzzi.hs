@@ -13,16 +13,10 @@ import Data.DPHS.Syntax
 import Data.DPHS.Syntactic
 
 x :: Typeable a => Variable a
-x = Variable "x"
+x = V "x"
 
 xx :: Fuzzi f (FuzziM Double)
 xx = iDeref x
-
-y :: Typeable a => Variable a
-y = Variable "y"
-
-yy :: Fuzzi f (FuzziM Int)
-yy = iDeref y
 
 ex1 :: EmMon (Fuzzi f) FuzziM ()
 ex1 = do
@@ -51,8 +45,9 @@ ex3 = do
     xx .= laplace 1.0 0.0
 
 ex4 :: EmMon (Fuzzi f) FuzziM ()
-ex4 =
-  ac y 100 $ do
+ex4 = do
+  v @Int (V "y") .= 0
+  ac (V "y") 100 $ do
     if_ (xx .> 100)
       (xx .= laplace 1.0 0.0)
       (xx .= laplace 2.0 0.0)

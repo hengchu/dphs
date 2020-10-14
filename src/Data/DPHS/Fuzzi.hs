@@ -5,12 +5,15 @@ module Data.DPHS.Fuzzi where
 import Data.Functor.Compose
 import Control.Monad
 import Type.Reflection
+import Data.List
 
+import Data.DPHS.Name
 import Data.DPHS.HXFunctor
 import Data.DPHS.Syntax
 import Data.DPHS.Syntactic
 import Data.DPHS.Types
 
+import Text.Printf
 import Data.Comp.Multi
 import Data.Comp.Multi.Show ()
 import Data.Comp.Multi.Equality ()
@@ -40,6 +43,12 @@ data ExprF :: (* -> *) -> * -> * where
 $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
           smartConstructors, smartAConstructors]
          [''ExprF])
+
+instance ShowHF ExprF where
+  showHF (Deref (V v)) = K (show v)
+  showHF (Index e idx) = K (printf "%s[%s]" (unK e) (unK idx))
+  showHF (ArrLit es) = K (printf "[%s]" contents)
+    where contents = (concat . intersperse ", " . map unK) es
 
 instance EqHF ExprF where
   eqHF (Deref (v1 :: Variable a1)) (Deref (v2 :: Variable a2)) =
@@ -165,6 +174,9 @@ if_ cond ct cf =
 
 v :: Typeable a => Variable a -> Fuzzi f (FuzziM a)
 v = iDeref
+
+vn :: Typeable a => Name -> Fuzzi f (FuzziM a)
+vn = v . V
 
 infixl 9 .!!
 (.!!) :: forall f a.

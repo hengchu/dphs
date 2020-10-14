@@ -15,7 +15,7 @@ import Data.Comp.Multi.Equality ()
 import Data.Comp.Multi.Ordering (KOrd(..))
 import Data.Comp.Multi.Derive
 
-newtype Variable a = Variable Name
+newtype Variable a = V Name
   deriving (Show, Eq, Ord)
 
 heq :: forall a b. (Typeable a, Typeable b) => Variable a -> Variable b -> Bool
@@ -125,7 +125,7 @@ instance CompareF :<: tgt => HOASToNamed CompareF tgt where
 
 -- |Embedded monadic syntax.
 data MonadF :: (* -> *) -> * -> * where
-  Bind :: Monad m => r (m a) -> r (a -> m b) -> MonadF r (m b)
+  Bind :: (Monad m, Typeable a) => r (m a) -> r (a -> m b) -> MonadF r (m b)
   Ret  :: Monad m => r a -> MonadF r (m a)
 
 $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
@@ -157,7 +157,7 @@ instance ( Syntactic (Cxt hole lang f) a,
 -- |Embedded lambda calculus.
 data XLambdaF :: (* -> *) -> * -> * where
   XLam :: Typeable a => (r a -> r b) -> XLambdaF r (a -> b)
-  XApp :: r (a -> b) -> r a -> XLambdaF r b
+  XApp :: Typeable a => r (a -> b) -> r a -> XLambdaF r b
   XVar :: Typeable a => Variable a -> XLambdaF r a
 
 instance HXFunctor XLambdaF where
@@ -180,7 +180,7 @@ instance ( Typeable (DeepRepr a),
 -- |Named lambda calculus representation.
 data LambdaF :: (* -> *) -> * -> * where
   Lam :: Typeable a => Variable a -> r b -> LambdaF r (a -> b)
-  App :: r (a -> b) -> r a -> LambdaF r b
+  App :: Typeable a => r (a -> b) -> r a -> LambdaF r b
   Var :: Typeable a => Variable a -> LambdaF r a
 
 instance EqHF LambdaF where
@@ -210,7 +210,7 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
 
 instance LambdaF :<: tgt => HOASToNamed XLambdaF tgt where
   hoasToNamedAlg (XLam f) = Compose $ do
-    x <- Variable <$> gfresh "x"
+    x <- V <$> gfresh "x"
     body <- getCompose $ f (Compose . return . iVar $ x)
     return (iLam x body)
   hoasToNamedAlg (XApp f arg) = Compose $ iApp <$> getCompose f <*> getCompose arg

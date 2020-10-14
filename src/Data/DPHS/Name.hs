@@ -6,6 +6,7 @@ import Optics
 import Text.Printf
 import qualified Data.Map.Strict as M
 import Data.Semigroup
+import Control.Monad.State.Strict
 
 data Name = N Text (Maybe Int)
   deriving (Eq, Ord)
@@ -105,3 +106,7 @@ instance Read Name where
 
 instance IsString Name where
   fromString = read
+
+instance Monad m => FreshM (StateT NameState m) where
+  getNameState = get
+  modifyNameState = modify
