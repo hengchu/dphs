@@ -46,8 +46,9 @@ ex3 = do
 
 ex4 :: EmMon (Fuzzi f) FuzziM ()
 ex4 = do
-  v @Int (V "y") .= 0
+  y .= 0
   ac (V "y") 100 $ do
     if_ (xx .> 100)
       (xx .= laplace 1.0 0.0)
       (xx .= laplace 2.0 0.0)
+  where y = v @Int (V "y")
