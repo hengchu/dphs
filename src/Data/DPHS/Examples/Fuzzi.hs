@@ -20,9 +20,9 @@ xx = iDeref x
 
 ex1 :: EmMon (Fuzzi f) FuzziM ()
 ex1 = do
-  xx .= laplace 1.0 0.0
+  xx .= laplace 1.0 xx
   xx .= laplace xx 0.0
-  xx .= laplace xx xx
+  --xx .= laplace xx xx
 
 deepEx1 :: forall f. Fuzzi f (FuzziM ())
 deepEx1 = toDeepRepr (ex1 @f)
