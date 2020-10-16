@@ -3,12 +3,13 @@ module Data.DPHS.Typecheck.Fuzzi where
 
 import Type.Reflection hiding (App)
 import qualified Data.Map.Strict as M
+import Data.Foldable
+import Control.Monad.Catch
 
 import Optics
 import Data.Comp.Multi.Algebra
 import Data.Comp.Multi.Derive
 import Data.Comp.Multi.HFunctor
-import Control.Monad.Catch
 
 import Data.DPHS.Syntax
 import Data.DPHS.Fuzzi
@@ -99,6 +100,11 @@ sensIMod (InternalSensConst a1) (InternalSensConst a2) =
 sensIMod (approx -> _) (InternalSensConst k) =
   InternalSensSensitive (abs k-1)
 sensIMod (approx -> s1) (approx -> s2)
+  | s1 == 0 && s2 == 0 = InternalSensSensitive 0
+  | otherwise = InternalSensSensitive infinity
+
+sensBoolBinop :: InternalSens -> InternalSens -> InternalSens
+sensBoolBinop (approx -> s1) (approx -> s2)
   | s1 == 0 && s2 == 0 = InternalSensSensitive 0
   | otherwise = InternalSensSensitive infinity
 
@@ -286,3 +292,50 @@ instance TyCheck ArithF where
               & unwrapOr (InternalError "expected atomic sensitivity")
     newSens <- sensSqrt sens
     return (cxt', AtomicTy newSens)
+
+instance TyCheck CompareF where
+  tyCheckAlg (IsEq (unK -> checkLhs) (unK -> checkRhs)) =
+    tyCheckBinop sensBoolBinop checkLhs checkRhs
+  tyCheckAlg (IsNeq (unK -> checkLhs) (unK -> checkRhs)) =
+    tyCheckBinop sensBoolBinop checkLhs checkRhs
+  tyCheckAlg (IsLt (unK -> checkLhs) (unK -> checkRhs)) =
+    tyCheckBinop sensBoolBinop checkLhs checkRhs
+  tyCheckAlg (IsLe (unK -> checkLhs) (unK -> checkRhs)) =
+    tyCheckBinop sensBoolBinop checkLhs checkRhs
+  tyCheckAlg (IsGt (unK -> checkLhs) (unK -> checkRhs)) =
+    tyCheckBinop sensBoolBinop checkLhs checkRhs
+  tyCheckAlg (IsGe (unK -> checkLhs) (unK -> checkRhs)) =
+    tyCheckBinop sensBoolBinop checkLhs checkRhs
+  tyCheckAlg (And (unK -> checkLhs) (unK -> checkRhs)) =
+    tyCheckBinop sensBoolBinop checkLhs checkRhs
+  tyCheckAlg (Or (unK -> checkLhs) (unK -> checkRhs)) =
+    tyCheckBinop sensBoolBinop checkLhs checkRhs
+  tyCheckAlg (Neg (unK -> check)) = K check
+
+instance TyCheck ExprF where
+  tyCheckAlg (Deref x) =
+    K $ \cxt -> do
+      xTy <- M.lookup xvar cxt & unwrapOr (UnknownVariable xvar)
+      return (cxt, xTy)
+    where xvar = AnyVariable x
+  tyCheckAlg (Index (unK -> checkArr) (unK -> checkIdx)) =
+    K $ \cxt -> do
+      (cxt1, arrTy) <- checkArr cxt
+      (cxt2, idxTy) <- checkIdx cxt1
+      idxSens <- preview #sensitivity idxTy
+                   & unwrapOr (InternalError "expecting atomic sensitivity")
+      case approx idxSens of
+        0 -> return (cxt2, arrTy)
+        _ -> return (cxt2, AtomicTy $ InternalSensSensitive infinity)
+  tyCheckAlg (ArrLit (map unK -> checkElems)) =
+    K $ \cxt -> do
+      (cxt', elemTys) <- foldrM go (cxt, []) checkElems
+      elemsSens <- traverse (unwrapOr (InternalError "expected atomic sensitivity") . preview #sensitivity) elemTys
+      return $ (cxt', AtomicTy $ foldr sensAdd (InternalSensSensitive 0) elemsSens)
+    where go checkFun (lastCxt, tyAcc) = do
+            (cxt', ty) <- checkFun lastCxt
+            return (cxt', ty:tyAcc)
+
+instance TyCheck PrivMechF where
+  tyCheckAlg (Laplace (unK -> checkWidth) (unK -> checkCenter)) =
+    undefined
