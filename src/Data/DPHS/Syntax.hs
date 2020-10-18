@@ -4,10 +4,12 @@ module Data.DPHS.Syntax where
 
 import Type.Reflection hiding (App)
 import Data.Functor.Compose
+import GHC.Stack
 
 import Data.DPHS.Name
 import Data.DPHS.HXFunctor
 import Data.DPHS.Syntactic
+import Data.DPHS.SrcLoc
 
 import Data.Comp.Multi
 import Data.Comp.Multi.Show ()
@@ -33,26 +35,26 @@ hcompare va vb =
         tr2 = typeRep @b
 
 class Integralite a where
-  idiv :: a -> a -> a
-  imod :: a -> a -> a
+  idiv :: HasCallStack => a -> a -> a
+  imod :: HasCallStack => a -> a -> a
 
 infixr 2 .||
 infixr 3 .&&
 infix  4 .==, ./=, .<, .<=, .>, .>=
 class SynBool a where
-  neg   :: a -> a
-  (.&&) :: a -> a -> a
-  (.||) :: a -> a -> a
+  neg   :: HasCallStack => a -> a
+  (.&&) :: HasCallStack => a -> a -> a
+  (.||) :: HasCallStack => a -> a -> a
 
 class SynBool (Cmp a) => SynOrd a where
   type Cmp a :: *
 
-  (.==) :: a -> a -> Cmp a
-  (./=) :: a -> a -> Cmp a
-  (.<)  :: a -> a -> Cmp a
-  (.<=) :: a -> a -> Cmp a
-  (.>)  :: a -> a -> Cmp a
-  (.>=) :: a -> a -> Cmp a
+  (.==) :: HasCallStack => a -> a -> Cmp a
+  (./=) :: HasCallStack => a -> a -> Cmp a
+  (.<)  :: HasCallStack => a -> a -> Cmp a
+  (.<=) :: HasCallStack => a -> a -> Cmp a
+  (.>)  :: HasCallStack => a -> a -> Cmp a
+  (.>=) :: HasCallStack => a -> a -> Cmp a
 
 -- |Basic arithmetic operations.
 data ArithF :: (* -> *) -> * -> * where
@@ -79,7 +81,8 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
           smartConstructors, smartAConstructors]
          [''ArithF])
 
-instance ArithF :<: tgt => HOASToNamed ArithF tgt where
+instance {-# OVERLAPPABLE #-}
+  ArithF :<: tgt => HOASToNamed ArithF tgt where
   hoasToNamedAlg (IntLit v) = Compose . return $ iIntLit v
   hoasToNamedAlg (FracLit v) = Compose . return $ iFracLit v
   hoasToNamedAlg (Add v1 v2) = Compose $ iAdd <$> getCompose v1 <*> getCompose v2
@@ -93,6 +96,22 @@ instance ArithF :<: tgt => HOASToNamed ArithF tgt where
   hoasToNamedAlg (Exp v) = Compose $ iExp <$> getCompose v
   hoasToNamedAlg (Log v) = Compose $ iLog <$> getCompose v
   hoasToNamedAlg (Sqrt v) = Compose $ iSqrt <$> getCompose v
+
+instance {-# OVERLAPPING #-}
+  ArithF :<: tgt => HOASToNamed (ArithF :&: Pos) (tgt :&: Pos) where
+  hoasToNamedAlg (IntLit v :&: pos) = Compose . return $ iAIntLit pos v
+  hoasToNamedAlg (FracLit v :&: pos) = Compose . return $ iAFracLit pos v
+  hoasToNamedAlg (Add v1 v2 :&: pos) = Compose $ iAAdd pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (Sub v1 v2 :&: pos) = Compose $ iASub pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (Abs v :&: pos) = Compose $ iAAbs pos <$> getCompose v
+  hoasToNamedAlg (Signum v :&: pos) = Compose $ iASignum pos <$> getCompose v
+  hoasToNamedAlg (Mult v1 v2 :&: pos) = Compose $ iAMult pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (Div v1 v2 :&: pos) = Compose $ iADiv pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (IDiv v1 v2 :&: pos) = Compose $ iAIDiv pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (IMod v1 v2 :&: pos) = Compose $ iAIMod pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (Exp v :&: pos) = Compose $ iAExp pos <$> getCompose v
+  hoasToNamedAlg (Log v :&: pos) = Compose $ iALog pos <$> getCompose v
+  hoasToNamedAlg (Sqrt v :&: pos) = Compose $ iASqrt pos <$> getCompose v
 
 -- |Basic comparison and boolean operations.
 data CompareF :: (* -> *) -> * -> * where
@@ -112,7 +131,8 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
           smartConstructors, smartAConstructors]
          [''CompareF])
 
-instance CompareF :<: tgt => HOASToNamed CompareF tgt where
+instance {-# OVERLAPPABLE #-}
+  CompareF :<: tgt => HOASToNamed CompareF tgt where
   hoasToNamedAlg (IsEq v1 v2) = Compose $ iIsEq <$> getCompose v1 <*> getCompose v2
   hoasToNamedAlg (IsNeq v1 v2) = Compose $ iIsNeq <$> getCompose v1 <*> getCompose v2
   hoasToNamedAlg (IsLt v1 v2) = Compose $ iIsLt <$> getCompose v1 <*> getCompose v2
@@ -122,6 +142,18 @@ instance CompareF :<: tgt => HOASToNamed CompareF tgt where
   hoasToNamedAlg (Neg v) = Compose $ iNeg <$> getCompose v
   hoasToNamedAlg (And v1 v2) = Compose $ iAnd <$> getCompose v1 <*> getCompose v2
   hoasToNamedAlg (Or v1 v2) = Compose $ iOr <$> getCompose v1 <*> getCompose v2
+
+instance {-# OVERLAPPING #-}
+  CompareF :<: tgt => HOASToNamed (CompareF :&: Pos) (tgt :&: Pos) where
+  hoasToNamedAlg (IsEq v1 v2 :&: pos) = Compose $ iAIsEq pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (IsNeq v1 v2 :&: pos) = Compose $ iAIsNeq pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (IsLt v1 v2 :&: pos) = Compose $ iAIsLt pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (IsLe v1 v2 :&: pos) = Compose $ iAIsLe pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (IsGt v1 v2 :&: pos) = Compose $ iAIsGt pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (IsGe v1 v2 :&: pos) = Compose $ iAIsGe pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (Neg v :&: pos) = Compose $ iANeg pos <$> getCompose v
+  hoasToNamedAlg (And v1 v2 :&: pos) = Compose $ iAAnd pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (Or v1 v2 :&: pos) = Compose $ iAOr pos <$> getCompose v1 <*> getCompose v2
 
 -- |Embedded monadic syntax.
 data MonadF :: (* -> *) -> * -> * where
@@ -137,22 +169,41 @@ instance MonadF :<: tgt => HOASToNamed MonadF tgt where
   hoasToNamedAlg (Bind ma kont) = Compose $ iBind <$> getCompose ma <*> getCompose kont
   hoasToNamedAlg (Ret a) = Compose $ iRet <$> getCompose a
 
+instance MonadF :<: tgt => HOASToNamed (MonadF :&: Pos) (tgt :&: Pos) where
+  hoasToNamedAlg (Bind ma kont :&: pos) = Compose $ iABind pos <$> getCompose ma <*> getCompose kont
+  hoasToNamedAlg (Ret a :&: pos) = Compose $ iARet pos <$> getCompose a
+
 instance Syntactic (Cxt hole lang f) (Cxt hole lang f a) where
   type DeepRepr (Cxt hole lang f a) = a
   toDeepRepr = id
   fromDeepRepr = id
 
 -- |Shallow monadic expressions are embedded through this catch-all instance.
-instance ( Syntactic (Cxt hole lang f) a,
-           Typeable (DeepRepr a),
-           MonadF :<: lang,
-           XLambdaF :<: lang,
-           Monad m,
-           Typeable m
-         ) => Syntactic (Cxt hole lang f) (Mon (Cxt hole lang f) m a) where
+instance {-# OVERLAPPABLE #-}
+  ( Syntactic (Cxt hole lang f) a,
+    Typeable (DeepRepr a),
+    MonadF :<: lang,
+    XLambdaF :<: lang,
+    Monad m,
+    Typeable m
+  ) => Syntactic (Cxt hole lang f) (Mon (Cxt hole lang f) m a) where
   type DeepRepr (Mon (Cxt hole lang f) m a) = m (DeepRepr a)
-  toDeepRepr (Mon m) = m (Term . inj . Ret . toDeepRepr)
-  fromDeepRepr m = Mon $ \k -> Term . inj $ Bind m (toDeepRepr k)
+  toDeepRepr (Mon m) = m (iRet . toDeepRepr)
+  fromDeepRepr m = Mon $ iBind m . toDeepRepr
+
+instance {-# OVERLAPPING #-}
+  ( Syntactic (Cxt hole (lang :&: Pos) f) a,
+    Typeable (DeepRepr a),
+    MonadF :<: lang,
+    XLambdaF :<: lang,
+    (MonadF :&: Pos) :<: lang :&: Pos,
+    (XLambdaF :&: Pos) :<: lang :&: Pos,
+    Monad m,
+    Typeable m
+  ) => Syntactic (Cxt hole (lang :&: Pos) f) (Mon (Cxt hole (lang :&: Pos) f) m a) where
+  type DeepRepr (Mon (Cxt hole (lang :&: Pos) f) m a) = m (DeepRepr a)
+  toDeepRepr (Mon m) = m (iARet noPos . toDeepRepr)
+  fromDeepRepr m = Mon $ iABind noPos m . toDeepRepr
 
 -- |Embedded lambda calculus.
 data XLambdaF :: (* -> *) -> * -> * where
@@ -167,15 +218,27 @@ instance HXFunctor XLambdaF where
 
 -- |Shallow functions and applications are embedded through this catch-all
 -- instance.
-instance ( Typeable (DeepRepr a),
-           Typeable (DeepRepr b),
-           Syntactic (Cxt hole lang f) a,
-           Syntactic (Cxt hole lang f) b,
-           XLambdaF :<: lang
-         ) => Syntactic (Cxt hole lang f) (a -> b) where
+instance {-# OVERLAPPABLE #-}
+  ( Typeable (DeepRepr a),
+    Typeable (DeepRepr b),
+    Syntactic (Cxt hole lang f) a,
+    Syntactic (Cxt hole lang f) b,
+    XLambdaF :<: lang
+  ) => Syntactic (Cxt hole lang f) (a -> b) where
   type DeepRepr (a -> b) = DeepRepr a -> DeepRepr b
   toDeepRepr f = Term . inj . XLam $ toDeepRepr . f . fromDeepRepr
   fromDeepRepr f = fromDeepRepr . (Term . inj . XApp f) . toDeepRepr
+
+instance {-# OVERLAPPING #-}
+  ( Typeable (DeepRepr a),
+    Typeable (DeepRepr b),
+    Syntactic (Cxt hole (lang :&: Pos) f) a,
+    Syntactic (Cxt hole (lang :&: Pos) f) b,
+    XLambdaF :&: Pos :<: lang :&: Pos
+  ) => Syntactic (Cxt hole (lang :&: Pos) f) (a -> b) where
+  type DeepRepr (a -> b) = DeepRepr a -> DeepRepr b
+  toDeepRepr f = Term . inj $ XLam (toDeepRepr . f . fromDeepRepr) :&: noPos
+  fromDeepRepr f = fromDeepRepr . (Term . inj . \arg -> XApp f arg :&: noPos) . toDeepRepr
 
 -- |Named lambda calculus representation.
 data LambdaF :: (* -> *) -> * -> * where
@@ -208,7 +271,8 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
           smartConstructors, smartAConstructors]
          [''LambdaF])
 
-instance LambdaF :<: tgt => HOASToNamed XLambdaF tgt where
+instance {-# OVERLAPPABLE #-}
+  LambdaF :<: tgt => HOASToNamed XLambdaF tgt where
   hoasToNamedAlg (XLam f) = Compose $ do
     x <- V <$> gfresh "x"
     body <- getCompose $ f (Compose . return . iVar $ x)
@@ -216,7 +280,17 @@ instance LambdaF :<: tgt => HOASToNamed XLambdaF tgt where
   hoasToNamedAlg (XApp f arg) = Compose $ iApp <$> getCompose f <*> getCompose arg
   hoasToNamedAlg (XVar fv) = Compose . return $ iVar fv
 
-instance (Num a, ArithF :<: lang) => Num (Cxt hole lang f a) where
+instance {-# OVERLAPPING #-}
+  LambdaF :<: tgt => HOASToNamed (XLambdaF :&: Pos) (tgt :&: Pos) where
+  hoasToNamedAlg (XLam f :&: pos) = Compose $ do
+    x <- V <$> gfresh "x"
+    body <- getCompose $ f (Compose . return . iAVar pos $ x)
+    return (iALam pos x body)
+  hoasToNamedAlg (XApp f arg :&: pos) = Compose $ iAApp pos <$> getCompose f <*> getCompose arg
+  hoasToNamedAlg (XVar fv :&: pos) = Compose . return $ iAVar pos fv
+
+instance {-# OVERLAPPABLE #-}
+  (Num a, ArithF :<: lang) => Num (Cxt hole lang f a) where
   (+) = iAdd
   (*) = iMult
   (-) = iSub
@@ -224,20 +298,49 @@ instance (Num a, ArithF :<: lang) => Num (Cxt hole lang f a) where
   signum = iSignum
   fromInteger = iIntLit
 
-instance (Fractional a, ArithF :<: lang) => Fractional (Cxt hole lang f a) where
+instance {-# OVERLAPPING #-}
+  (Num a, ArithF :<: lang) => Num (Cxt hole (lang :&: Pos) f a) where
+  (+) = iAAdd noPos
+  (*) = iAMult noPos
+  (-) = iASub noPos
+  abs = iAAbs noPos
+  signum = iASignum noPos
+  fromInteger = iAIntLit noPos
+
+instance {-# OVERLAPPABLE #-}
+  (Fractional a, ArithF :<: lang) => Fractional (Cxt hole lang f a) where
   (/) = iDiv
   fromRational = iFracLit
 
-instance (Integralite a, ArithF :<: lang) => Integralite (Cxt hole lang f a) where
+instance {-# OVERLAPPING #-}
+  (Fractional a, ArithF :<: lang) => Fractional (Cxt hole (lang :&: Pos) f a) where
+  (/) = iADiv noPos
+  fromRational = iAFracLit noPos
+
+instance {-# OVERLAPPABLE #-}
+  (Integralite a, ArithF :<: lang) => Integralite (Cxt hole lang f a) where
   idiv = iIDiv
   imod = iIMod
 
-instance (SynBool a, CompareF :<: lang) => SynBool (Cxt hole lang f a) where
+instance {-# OVERLAPPING #-}
+  (Integralite a, ArithF :<: lang) => Integralite (Cxt hole (lang :&: Pos) f a) where
+  idiv = iAIDiv (fromCallStack callStack)
+  imod = iAIMod (fromCallStack callStack)
+
+instance {-# OVERLAPPABLE #-}
+  (SynBool a, CompareF :<: lang) => SynBool (Cxt hole lang f a) where
   neg = iNeg
   (.&&) = iAnd
   (.||) = iOr
 
-instance (SynOrd a, CompareF :<: lang) => SynOrd (Cxt hole lang f a) where
+instance {-# OVERLAPPING #-}
+  (SynBool a, CompareF :<: lang) => SynBool (Cxt hole (lang :&: Pos) f a) where
+  neg = iANeg (fromCallStack callStack)
+  (.&&) = iAAnd (fromCallStack callStack)
+  (.||) = iAOr (fromCallStack callStack)
+
+instance {-# OVERLAPPABLE #-}
+  (SynOrd a, CompareF :<: lang) => SynOrd (Cxt hole lang f a) where
   type Cmp (Cxt hole lang f a) = Cxt hole lang f (Cmp a)
   (.==) = iIsEq
   (./=) = iIsNeq
@@ -245,6 +348,16 @@ instance (SynOrd a, CompareF :<: lang) => SynOrd (Cxt hole lang f a) where
   (.<=) = iIsLe
   (.>) = iIsGt
   (.>=) = iIsGe
+
+instance {-# OVERLAPPING #-}
+  (SynOrd a, CompareF :<: lang) => SynOrd (Cxt hole (lang :&: Pos) f a) where
+  type Cmp (Cxt hole (lang :&: Pos) f a) = Cxt hole (lang :&: Pos) f (Cmp a)
+  (.==) = iAIsEq (fromCallStack callStack)
+  (./=) = iAIsNeq (fromCallStack callStack)
+  (.<) = iAIsLt (fromCallStack callStack)
+  (.<=) = iAIsLe (fromCallStack callStack)
+  (.>) = iAIsGt (fromCallStack callStack)
+  (.>=) = iAIsGe (fromCallStack callStack)
 
 instance SynBool Bool where
   neg = not
