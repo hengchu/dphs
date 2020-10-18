@@ -184,7 +184,7 @@ instance langPos ~ Annotate lang Pos => SyntacticPos lang (Term langPos a) where
   fromDeepRepr' = id
 
 -- |Shallow monadic expressions are embedded through this catch-all instance.
-instance {-# OVERLAPPABLE #-}
+instance
   ( Syntactic (Cxt hole lang f) a,
     Typeable (DeepRepr a),
     MonadF :<: lang,
@@ -195,6 +195,22 @@ instance {-# OVERLAPPABLE #-}
   type DeepRepr (Mon (Cxt hole lang f) m a) = m (DeepRepr a)
   toDeepRepr (Mon m) = m (iRet . toDeepRepr)
   fromDeepRepr m = Mon $ iBind m . toDeepRepr
+
+instance
+  ( SyntacticPos lang a,
+    Typeable (DeepRepr' a),
+    MonadF :<: lang,
+    XLambdaF :<: lang,
+    MonadF :&: Pos :<: Annotate lang Pos,
+    XLambdaF :&: Pos :<: Annotate lang Pos,
+    Monad m,
+    Typeable m,
+    langPos ~ Annotate lang Pos,
+    DistAnn lang Pos langPos
+  ) => SyntacticPos lang (Mon (Term langPos) m a) where
+  type DeepRepr' (Mon (Term langPos) m a) = m (DeepRepr' a)
+  toDeepRepr' (Mon m) = m (iARet noPos . toDeepRepr')
+  fromDeepRepr' m = Mon $ iABind noPos m . toDeepRepr'
 
 -- |Embedded lambda calculus.
 data XLambdaF :: (* -> *) -> * -> * where
@@ -209,7 +225,7 @@ instance HXFunctor XLambdaF where
 
 -- |Shallow functions and applications are embedded through this catch-all
 -- instance.
-instance {-# OVERLAPPABLE #-}
+instance
   ( Typeable (DeepRepr a),
     Typeable (DeepRepr b),
     Syntactic (Cxt hole lang f) a,
@@ -220,16 +236,16 @@ instance {-# OVERLAPPABLE #-}
   toDeepRepr f = Term . inj . XLam $ toDeepRepr . f . fromDeepRepr
   fromDeepRepr f = fromDeepRepr . (Term . inj . XApp f) . toDeepRepr
 
-instance {-# OVERLAPPING #-}
-  ( Typeable (DeepRepr a),
-    Typeable (DeepRepr b),
-    Syntactic (Cxt hole (lang :&: Pos) f) a,
-    Syntactic (Cxt hole (lang :&: Pos) f) b,
-    XLambdaF :&: Pos :<: lang :&: Pos
-  ) => Syntactic (Cxt hole (lang :&: Pos) f) (a -> b) where
-  type DeepRepr (a -> b) = DeepRepr a -> DeepRepr b
-  toDeepRepr f = Term . inj $ XLam (toDeepRepr . f . fromDeepRepr) :&: noPos
-  fromDeepRepr f = fromDeepRepr . (Term . inj . \arg -> XApp f arg :&: noPos) . toDeepRepr
+instance
+  ( Typeable (DeepRepr' a),
+    Typeable (DeepRepr' b),
+    SyntacticPos lang a,
+    SyntacticPos lang b,
+    XLambdaF :&: Pos :<: Annotate lang Pos
+  ) => SyntacticPos lang (a -> b) where
+  type DeepRepr' (a -> b) = DeepRepr' a -> DeepRepr' b
+  toDeepRepr' f = Term . inj $ (XLam (toDeepRepr' . f . fromDeepRepr') :&: noPos)
+  fromDeepRepr' f = fromDeepRepr' . (Term . inj . \x -> XApp f x :&: noPos) . toDeepRepr'
 
 -- |Named lambda calculus representation.
 data LambdaF :: (* -> *) -> * -> * where
@@ -280,6 +296,7 @@ instance {-# OVERLAPPING #-}
   hoasToNamedAlg (XApp f arg :&: pos) = Compose $ iAApp pos <$> getCompose f <*> getCompose arg
   hoasToNamedAlg (XVar fv :&: pos) = Compose . return $ iAVar pos fv
 
+{-
 instance {-# OVERLAPPABLE #-}
   (Num a, ArithF :<: lang) => Num (Cxt hole lang f a) where
   (+) = iAdd
@@ -288,9 +305,15 @@ instance {-# OVERLAPPABLE #-}
   abs = iAbs
   signum = iSignum
   fromInteger = iIntLit
+-}
 
 instance {-# OVERLAPPING #-}
-  (Num a, ArithF :<: lang) => Num (Cxt hole (lang :&: Pos) f a) where
+  ( Num a
+  , ArithF :<: lang
+  , ArithF :&: Pos :<: Annotate lang Pos
+  , langPos ~ Annotate lang Pos
+  , DistAnn lang Pos langPos
+  ) => Num (Cxt hole langPos f a) where
   (+) = iAAdd noPos
   (*) = iAMult noPos
   (-) = iASub noPos
@@ -298,38 +321,60 @@ instance {-# OVERLAPPING #-}
   signum = iASignum noPos
   fromInteger = iAIntLit noPos
 
+{-
 instance {-# OVERLAPPABLE #-}
   (Fractional a, ArithF :<: lang) => Fractional (Cxt hole lang f a) where
   (/) = iDiv
   fromRational = iFracLit
+-}
 
 instance {-# OVERLAPPING #-}
-  (Fractional a, ArithF :<: lang) => Fractional (Cxt hole (lang :&: Pos) f a) where
+  ( Fractional a
+  , ArithF :<: lang
+  , ArithF :&: Pos :<: langPos
+  , langPos ~ Annotate lang Pos
+  , DistAnn lang Pos langPos
+  ) => Fractional (Cxt hole langPos f a) where
   (/) = iADiv noPos
   fromRational = iAFracLit noPos
 
+{-
 instance {-# OVERLAPPABLE #-}
   (Integralite a, ArithF :<: lang) => Integralite (Cxt hole lang f a) where
   idiv = iIDiv
   imod = iIMod
+-}
 
 instance {-# OVERLAPPING #-}
-  (Integralite a, ArithF :<: lang) => Integralite (Cxt hole (lang :&: Pos) f a) where
+  ( Integralite a
+  , ArithF :<: lang
+  , ArithF :&: Pos :<: langPos
+  , langPos ~ Annotate lang Pos
+  , DistAnn lang Pos langPos
+  ) => Integralite (Cxt hole langPos f a) where
   idiv = iAIDiv (fromCallStack callStack)
   imod = iAIMod (fromCallStack callStack)
 
+{-
 instance {-# OVERLAPPABLE #-}
   (SynBool a, CompareF :<: lang) => SynBool (Cxt hole lang f a) where
   neg = iNeg
   (.&&) = iAnd
   (.||) = iOr
+-}
 
 instance {-# OVERLAPPING #-}
-  (SynBool a, CompareF :<: lang) => SynBool (Cxt hole (lang :&: Pos) f a) where
+  ( SynBool a
+  , CompareF :<: lang
+  , CompareF :&: Pos :<: langPos
+  , langPos ~ Annotate lang Pos
+  , DistAnn lang Pos langPos
+  ) => SynBool (Cxt hole langPos f a) where
   neg = iANeg (fromCallStack callStack)
   (.&&) = iAAnd (fromCallStack callStack)
   (.||) = iAOr (fromCallStack callStack)
 
+{-
 instance {-# OVERLAPPABLE #-}
   (SynOrd a, CompareF :<: lang) => SynOrd (Cxt hole lang f a) where
   type Cmp (Cxt hole lang f a) = Cxt hole lang f (Cmp a)
@@ -339,10 +384,16 @@ instance {-# OVERLAPPABLE #-}
   (.<=) = iIsLe
   (.>) = iIsGt
   (.>=) = iIsGe
+-}
 
 instance {-# OVERLAPPING #-}
-  (SynOrd a, CompareF :<: lang) => SynOrd (Cxt hole (lang :&: Pos) f a) where
-  type Cmp (Cxt hole (lang :&: Pos) f a) = Cxt hole (lang :&: Pos) f (Cmp a)
+  ( SynOrd a
+  , CompareF :<: lang
+  , CompareF :&: Pos :<: langPos
+  , langPos ~ Annotate lang Pos
+  , DistAnn lang Pos langPos
+  ) => SynOrd (Cxt hole langPos f a) where
+  type Cmp (Cxt hole langPos f a) = Cxt hole langPos f (Cmp a)
   (.==) = iAIsEq (fromCallStack callStack)
   (./=) = iAIsNeq (fromCallStack callStack)
   (.<) = iAIsLt (fromCallStack callStack)

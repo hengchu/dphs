@@ -23,3 +23,5 @@ fromCallStack stk =
 type family Annotate h p = result | result -> h p where
   Annotate (f :+: g) p = Annotate f p :+: Annotate g p
   Annotate a p = a :&: p
+
+type WithPos f = Annotate f Pos

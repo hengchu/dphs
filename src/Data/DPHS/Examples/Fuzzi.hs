@@ -6,7 +6,9 @@ import Type.Reflection
 
 import Data.Comp.Multi.Term
 import Data.Comp.Multi.Algebra
+import Data.Comp.Multi.Annotation
 
+import Data.DPHS.SrcLoc
 import Data.DPHS.HXFunctor
 import Data.DPHS.Name
 import Data.DPHS.Fuzzi
@@ -16,23 +18,21 @@ import Data.DPHS.Syntactic
 x :: Typeable a => Variable a
 x = V "x"
 
-xx :: Term FuzziF (FuzziM Double)
-xx = iDeref x
+xx :: Term (WithPos FuzziF) (FuzziM Double)
+xx = v x
 
-xx' :: Term FuzziF (FuzziM Double)
-xx' = iDeref x
-
-ex1 :: EmMon (Term FuzziF) FuzziM ()
+ex1 :: EmMon (Term (WithPos FuzziF)) FuzziM ()
 ex1 = do
-  xx .= laplace 1.0 xx
-  xx .= laplace xx 0.0
+  v @Double (V "x") .= laplace 1.0 xx
+  v @Double (V "x") .= laplace xx 0.0
 
-deepEx1 :: Term FuzziF (FuzziM ())
-deepEx1 = toDeepRepr ex1
+deepEx1 :: Term (WithPos FuzziF) (FuzziM ())
+deepEx1 = toDeepRepr' ex1
 
-namedEx1 :: forall m. FreshM m => m (Term NFuzziF (FuzziM ()))
-namedEx1 = getCompose $ hxcata (hoasToNamedAlg @FuzziF) (xtoCxt deepEx1)
+namedEx1 :: FreshM m => m (Term (NFuzziF :&: Pos) (FuzziM ()))
+namedEx1 = getCompose $ hxcata (hoasToNamedAlg @(WithPos FuzziF)) (xtoCxt deepEx1)
 
+{-
 ex2 :: EmMon (Term FuzziF) FuzziM ()
 ex2 = do
   if_ (xx .> 5)
@@ -52,3 +52,4 @@ ex4 = do
       (xx .= laplace 1.0 0.0)
       (xx .= laplace 2.0 0.0)
   where y = v @Int (V "y")
+-}

@@ -8,6 +8,8 @@ import Data.Comp.Multi.HFunctor
 import Data.Comp.Multi.Sum
 import Data.Comp.Multi.Term
 import Data.Comp.Multi.Algebra
+import Data.Comp.Multi.Annotation
+
 import Data.Functor.Compose
 
 -- |A higher-order exponential functor. Useful for embedding terms with HOAS
@@ -31,6 +33,11 @@ instance {-# OVERLAPPING #-}
     caseH
       (\left -> inj $ hxmap f g left)
       (\right -> inj $ hxmap f g right)
+
+instance {-# OVERLAPPING #-}
+  HXFunctor h => HXFunctor (h :&: p) where
+  hxmap f g (term :&: p) =
+    hxmap @h f g term :&: p
 
 class HOASToNamed (h :: (* -> *) -> * -> *) (tgt :: (* -> *) -> * -> *) where
   -- |Algebra for converting a HOAS representation with carrier 'h' into a term
