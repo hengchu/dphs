@@ -150,75 +150,71 @@ type NFuzziF = ArithF :+: CompareF :+: ExprF
               :+: ExtensionF
 type NFuzzi f = Context NFuzziF f
 
-assign :: forall f a.
-          Fuzzi f (FuzziM a)
-       -> Fuzzi f (FuzziM a)
-       -> EmMon (Fuzzi f) FuzziM ()
+assign :: forall a.
+          Term FuzziF (FuzziM a)
+       -> Term FuzziF (FuzziM a)
+       -> EmMon (Term FuzziF) FuzziM ()
 assign lhs rhs =
   fromDeepRepr $ iAssign lhs rhs
 
-while :: forall f.
-         Fuzzi f (FuzziM Bool)
-      -> EmMon (Fuzzi f) FuzziM ()
-      -> EmMon (Fuzzi f) FuzziM ()
+while :: Term FuzziF (FuzziM Bool)
+      -> EmMon (Term FuzziF) FuzziM ()
+      -> EmMon (Term FuzziF) FuzziM ()
 while cond body =
   fromDeepRepr $ iWhile cond (toDeepRepr body)
 
-if_ :: forall f.
-       Fuzzi f (FuzziM Bool)
-    -> EmMon (Fuzzi f) FuzziM ()
-    -> EmMon (Fuzzi f) FuzziM ()
-    -> EmMon (Fuzzi f) FuzziM ()
+if_ :: Term FuzziF (FuzziM Bool)
+    -> EmMon (Term FuzziF) FuzziM ()
+    -> EmMon (Term FuzziF) FuzziM ()
+    -> EmMon (Term FuzziF) FuzziM ()
 if_ cond ct cf =
   fromDeepRepr $ iBranch cond (toDeepRepr ct) (toDeepRepr cf)
 
-v :: Typeable a => Variable a -> Fuzzi f (FuzziM a)
+v :: Typeable a => Variable a -> Term FuzziF (FuzziM a)
 v = iDeref
 
-vn :: Typeable a => Name -> Fuzzi f (FuzziM a)
+vn :: Typeable a => Name -> Term FuzziF (FuzziM a)
 vn = v . V
 
 infixl 9 .!!
-(.!!) :: forall f a.
-         Fuzzi f (FuzziM (Array a))
-      -> Fuzzi f (FuzziM Int)
-      -> Fuzzi f (FuzziM a)
+(.!!) :: forall a.
+         Term FuzziF (FuzziM (Array a))
+      -> Term FuzziF (FuzziM Int)
+      -> Term FuzziF (FuzziM a)
 (.!!) = iIndex
 
 infix 4 .=
-(.=) :: forall f a.
-        Fuzzi f (FuzziM a)
-     -> Fuzzi f (FuzziM a)
-     -> EmMon (Fuzzi f) FuzziM ()
+(.=) :: forall a.
+        Term FuzziF (FuzziM a)
+     -> Term FuzziF (FuzziM a)
+     -> EmMon (Term FuzziF) FuzziM ()
 (.=) = assign
 
-laplace :: forall f.
-           Fuzzi f (FuzziM Double)
-        -> Fuzzi f (FuzziM Double)
-        -> Fuzzi f (FuzziM Double)
+laplace :: Term FuzziF (FuzziM Double)
+        -> Term FuzziF (FuzziM Double)
+        -> Term FuzziF (FuzziM Double)
 laplace width center = iLaplace width center
 
-bmap :: forall f a b.
+bmap :: forall a b.
         (Typeable a, Typeable b)
-     => Fuzzi f (FuzziM (Bag a))
-     -> (Fuzzi f (FuzziM a) -> Fuzzi f (FuzziM b))
-     -> Fuzzi f (FuzziM (Bag b))
+     => Term FuzziF (FuzziM (Bag a))
+     -> (Term FuzziF (FuzziM a) -> Term FuzziF (FuzziM b))
+     -> Term FuzziF (FuzziM (Bag b))
 bmap input f = iBMap input (toDeepRepr f)
 
-amap :: forall f a b.
+amap :: forall a b.
         (Typeable a, Typeable b)
-     => Fuzzi f (FuzziM (Array a))
-     -> (Fuzzi f (FuzziM a) -> Fuzzi f (FuzziM b))
-     -> Fuzzi f (FuzziM (Array b))
+     => Term FuzziF (FuzziM (Array a))
+     -> (Term FuzziF (FuzziM a) -> Term FuzziF (FuzziM b))
+     -> Term FuzziF (FuzziM (Array b))
 amap input f = iAMap input (toDeepRepr f)
 
-ac :: forall f.
-      Variable Int
+ac :: Variable Int
    -> Int
-   -> EmMon (Fuzzi f) FuzziM ()
-   -> EmMon (Fuzzi f) FuzziM ()
+   -> EmMon (Term FuzziF) FuzziM ()
+   -> EmMon (Term FuzziF) FuzziM ()
 ac i n iter =
-  fromDeepRepr @(Fuzzi f) $ iAdvComp i n (toDeepRepr iter)
+  fromDeepRepr @(Term FuzziF) $ iAdvComp i n (toDeepRepr iter)
 
 instance Num a => Num (FuzziM a) where
   (+) = liftM2 (+)

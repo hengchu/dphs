@@ -1,3 +1,5 @@
+{-# language TypeFamilyDependencies #-}
+
 module Data.DPHS.SrcLoc where
 
 import GHC.Stack
@@ -18,6 +20,6 @@ fromCallStack stk =
     (_, loc):_ -> Pos (Just loc)
     _ -> Pos Nothing
 
-type family Annotate (h :: (* -> *) -> * -> *) (p :: *) :: ((* -> *) -> * -> *) where
+type family Annotate h p = result | result -> h p where
   Annotate (f :+: g) p = Annotate f p :+: Annotate g p
   Annotate a p = a :&: p

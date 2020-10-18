@@ -178,6 +178,11 @@ instance Syntactic (Cxt hole lang f) (Cxt hole lang f a) where
   toDeepRepr = id
   fromDeepRepr = id
 
+instance langPos ~ Annotate lang Pos => SyntacticPos lang (Term langPos a) where
+  type DeepRepr' (Term langPos a) = a
+  toDeepRepr' = id
+  fromDeepRepr' = id
+
 -- |Shallow monadic expressions are embedded through this catch-all instance.
 instance {-# OVERLAPPABLE #-}
   ( Syntactic (Cxt hole lang f) a,
@@ -190,20 +195,6 @@ instance {-# OVERLAPPABLE #-}
   type DeepRepr (Mon (Cxt hole lang f) m a) = m (DeepRepr a)
   toDeepRepr (Mon m) = m (iRet . toDeepRepr)
   fromDeepRepr m = Mon $ iBind m . toDeepRepr
-
-instance {-# OVERLAPPING #-}
-  ( Syntactic (Cxt hole (lang :&: Pos) f) a,
-    Typeable (DeepRepr a),
-    MonadF :<: lang,
-    XLambdaF :<: lang,
-    (MonadF :&: Pos) :<: lang :&: Pos,
-    (XLambdaF :&: Pos) :<: lang :&: Pos,
-    Monad m,
-    Typeable m
-  ) => Syntactic (Cxt hole (lang :&: Pos) f) (Mon (Cxt hole (lang :&: Pos) f) m a) where
-  type DeepRepr (Mon (Cxt hole (lang :&: Pos) f) m a) = m (DeepRepr a)
-  toDeepRepr (Mon m) = m (iARet noPos . toDeepRepr)
-  fromDeepRepr m = Mon $ iABind noPos m . toDeepRepr
 
 -- |Embedded lambda calculus.
 data XLambdaF :: (* -> *) -> * -> * where

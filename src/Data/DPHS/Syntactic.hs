@@ -1,12 +1,22 @@
 module Data.DPHS.Syntactic where
 
 import Type.Reflection
+import Data.Comp.Multi.Annotation
+import Data.Comp.Multi.Term
+
+import Data.DPHS.SrcLoc
 
 class Syntactic (f :: * -> *) a where
   type DeepRepr a :: *
 
   toDeepRepr   :: a -> f (DeepRepr a)
   fromDeepRepr :: f (DeepRepr a) -> a
+
+class SyntacticPos (h :: (* -> *) -> * -> *) a where
+  type DeepRepr' a :: *
+
+  toDeepRepr' :: a -> Term (Annotate h Pos) (DeepRepr' a)
+  fromDeepRepr' :: Term (Annotate h Pos) (DeepRepr' a) -> a
 
 -- | The shallow representation of monadic values.
 newtype Mon f m a = Mon {runMon :: forall b. Typeable b => (a -> f (m b)) -> f (m b)}

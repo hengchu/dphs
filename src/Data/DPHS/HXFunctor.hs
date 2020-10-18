@@ -1,5 +1,7 @@
 module Data.DPHS.HXFunctor where
 
+import Unsafe.Coerce
+
 import Data.DPHS.Name
 
 import Data.Comp.Multi.HFunctor
@@ -50,3 +52,7 @@ hxcata _   (Hole term) = term
 hxcata alg (Term term) = alg . go $ term
   where
     go = hxmap (hxcata alg) Hole
+
+-- |Just like 'toCxt', but only needs an exponential functor.
+xtoCxt :: HXFunctor h => Term h a -> Context h f a
+xtoCxt = unsafeCoerce
