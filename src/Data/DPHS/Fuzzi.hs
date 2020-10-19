@@ -6,12 +6,14 @@ import Data.Functor.Compose
 import Control.Monad
 import Type.Reflection
 import Data.List
+import GHC.Stack
 
 import Data.DPHS.Name
 import Data.DPHS.HXFunctor
 import Data.DPHS.Syntax
 import Data.DPHS.Syntactic
 import Data.DPHS.Types
+import Data.DPHS.SrcLoc
 
 import Text.Printf
 import Data.Comp.Multi
@@ -142,83 +144,86 @@ type FuzziF = ArithF :+: CompareF :+: ExprF
               :+: PrivMechF :+: EffF :+: XLambdaF
               :+: MonadF
               :+: ExtensionF
-type Fuzzi f = Context FuzziF f
+--type Fuzzi f = Context FuzziF f
 
 type NFuzziF = ArithF :+: CompareF :+: ExprF
               :+: PrivMechF :+: EffF :+: LambdaF
               :+: MonadF
               :+: ExtensionF
-type NFuzzi f = Context NFuzziF f
+--type NFuzzi f = Context NFuzziF f
 
-assign :: forall f a.
-          Fuzzi f (FuzziM a)
-       -> Fuzzi f (FuzziM a)
-       -> EmMon (Fuzzi f) FuzziM ()
+assign :: forall a.
+          HasCallStack
+       => Term (WithPos FuzziF) (FuzziM a)
+       -> Term (WithPos FuzziF) (FuzziM a)
+       -> EmMon (Term (WithPos FuzziF)) FuzziM ()
 assign lhs rhs =
-  fromDeepRepr $ iAssign lhs rhs
+  fromDeepRepr' $ iAAssign (fromCallStack callStack) lhs rhs
 
-while :: forall f.
-         Fuzzi f (FuzziM Bool)
-      -> EmMon (Fuzzi f) FuzziM ()
-      -> EmMon (Fuzzi f) FuzziM ()
+while :: HasCallStack
+      => Term (WithPos FuzziF) (FuzziM Bool)
+      -> EmMon (Term (WithPos FuzziF)) FuzziM ()
+      -> EmMon (Term (WithPos FuzziF)) FuzziM ()
 while cond body =
-  fromDeepRepr $ iWhile cond (toDeepRepr body)
+  fromDeepRepr' $ iAWhile (fromCallStack callStack) cond (toDeepRepr' body)
 
-if_ :: forall f.
-       Fuzzi f (FuzziM Bool)
-    -> EmMon (Fuzzi f) FuzziM ()
-    -> EmMon (Fuzzi f) FuzziM ()
-    -> EmMon (Fuzzi f) FuzziM ()
+if_ :: HasCallStack
+    => Term (WithPos FuzziF) (FuzziM Bool)
+    -> EmMon (Term (WithPos FuzziF)) FuzziM ()
+    -> EmMon (Term (WithPos FuzziF)) FuzziM ()
+    -> EmMon (Term (WithPos FuzziF)) FuzziM ()
 if_ cond ct cf =
-  fromDeepRepr $ iBranch cond (toDeepRepr ct) (toDeepRepr cf)
+  fromDeepRepr' $ iABranch (fromCallStack callStack) cond (toDeepRepr' ct) (toDeepRepr' cf)
 
-v :: Typeable a => Variable a -> Fuzzi f (FuzziM a)
-v = iDeref
+v :: (Typeable a, HasCallStack) => Variable a -> Term (WithPos FuzziF) (FuzziM a)
+v = iADeref (fromCallStack callStack)
 
-vn :: Typeable a => Name -> Fuzzi f (FuzziM a)
+vn :: (Typeable a, HasCallStack) => Name -> Term (WithPos FuzziF) (FuzziM a)
 vn = v . V
 
 infixl 9 .!!
-(.!!) :: forall f a.
-         Fuzzi f (FuzziM (Array a))
-      -> Fuzzi f (FuzziM Int)
-      -> Fuzzi f (FuzziM a)
-(.!!) = iIndex
+(.!!) :: forall a.
+         HasCallStack
+      => Term (WithPos FuzziF) (FuzziM (Array a))
+      -> Term (WithPos FuzziF) (FuzziM Int)
+      -> Term (WithPos FuzziF) (FuzziM a)
+(.!!) = iAIndex (fromCallStack callStack)
 
 infix 4 .=
-(.=) :: forall f a.
-        Fuzzi f (FuzziM a)
-     -> Fuzzi f (FuzziM a)
-     -> EmMon (Fuzzi f) FuzziM ()
+(.=) :: forall a.
+        HasCallStack
+     => Term (WithPos FuzziF) (FuzziM a)
+     -> Term (WithPos FuzziF) (FuzziM a)
+     -> EmMon (Term (WithPos FuzziF)) FuzziM ()
 (.=) = assign
 
-laplace :: forall f.
-           Fuzzi f (FuzziM Double)
-        -> Fuzzi f (FuzziM Double)
-        -> Fuzzi f (FuzziM Double)
-laplace width center = iLaplace width center
+laplace :: HasCallStack
+        => Term (WithPos FuzziF) (FuzziM Double)
+        -> Term (WithPos FuzziF) (FuzziM Double)
+        -> Term (WithPos FuzziF) (FuzziM Double)
+laplace width center = iALaplace (fromCallStack callStack) width center
 
-bmap :: forall f a b.
-        (Typeable a, Typeable b)
-     => Fuzzi f (FuzziM (Bag a))
-     -> (Fuzzi f (FuzziM a) -> Fuzzi f (FuzziM b))
-     -> Fuzzi f (FuzziM (Bag b))
-bmap input f = iBMap input (toDeepRepr f)
+bmap :: forall a b.
+        (Typeable a, Typeable b, HasCallStack)
+     => Term (WithPos FuzziF) (FuzziM (Bag a))
+     -> (Term (WithPos FuzziF) (FuzziM a) -> Term (WithPos FuzziF) (FuzziM b))
+     -> Term (WithPos FuzziF) (FuzziM (Bag b))
+bmap input f = iABMap (fromCallStack callStack) input (toDeepRepr' f)
 
-amap :: forall f a b.
-        (Typeable a, Typeable b)
-     => Fuzzi f (FuzziM (Array a))
-     -> (Fuzzi f (FuzziM a) -> Fuzzi f (FuzziM b))
-     -> Fuzzi f (FuzziM (Array b))
-amap input f = iAMap input (toDeepRepr f)
+amap :: forall a b.
+        (Typeable a, Typeable b, HasCallStack)
+     => Term (WithPos FuzziF) (FuzziM (Array a))
+     -> (Term (WithPos FuzziF) (FuzziM a) -> Term (WithPos FuzziF) (FuzziM b))
+     -> Term (WithPos FuzziF) (FuzziM (Array b))
+amap input f = iAAMap (fromCallStack callStack) input (toDeepRepr' f)
 
-ac :: forall f.
-      Variable Int
+ac :: HasCallStack
+   => Variable Int
    -> Int
-   -> EmMon (Fuzzi f) FuzziM ()
-   -> EmMon (Fuzzi f) FuzziM ()
+   -> EmMon (Term (WithPos FuzziF)) FuzziM ()
+   -> EmMon (Term (WithPos FuzziF)) FuzziM ()
 ac i n iter =
-  fromDeepRepr @(Fuzzi f) $ iAdvComp i n (toDeepRepr iter)
+  fromDeepRepr' $ iAAdvComp (fromCallStack callStack) i n (toDeepRepr' iter)
 
 instance Num a => Num (FuzziM a) where
   (+) = liftM2 (+)
@@ -271,22 +276,73 @@ instance Floating a => Floating (FuzziM a) where
   acosh = fmap acosh
   atanh = fmap atanh
 
+{-
 instance HOASToNamed ExprF NFuzziF where
-  hoasToNamedAlg (Deref var) = Compose . return $ iDeref var
-  hoasToNamedAlg (Index e idx) = Compose $ iIndex <$> getCompose e <*> getCompose idx
-  hoasToNamedAlg (ArrLit es) = Compose $ iArrLit <$> traverse getCompose es
+  hoasToNamedAlg (Deref var) =
+    Compose . return $ iDeref var
+  hoasToNamedAlg (Index e idx) =
+    Compose $ iIndex <$> getCompose e <*> getCompose idx
+  hoasToNamedAlg (ArrLit es) =
+    Compose $ iArrLit <$> traverse getCompose es
+-}
 
+instance
+  nfuzziPos ~ WithPos NFuzziF => HOASToNamed (ExprF :&: Pos) nfuzziPos where
+  hoasToNamedAlg (Deref var :&: pos) =
+    Compose . return $ iADeref pos var
+  hoasToNamedAlg (Index e idx :&: pos) =
+    Compose $ iAIndex pos <$> getCompose e <*> getCompose idx
+  hoasToNamedAlg (ArrLit es :&: pos) =
+    Compose $ iAArrLit pos <$> traverse getCompose es
+
+{-
 instance HOASToNamed ExtensionF NFuzziF where
   hoasToNamedAlg (BMap input f) = Compose $ iBMap <$> getCompose input <*> getCompose f
   hoasToNamedAlg (BSum clip input) = Compose $ iBSum clip <$> getCompose input
   hoasToNamedAlg (AMap input f) = Compose $ iAMap <$> getCompose input <*> getCompose f
   hoasToNamedAlg (Part nparts input partfun) = Compose $ iPart nparts <$> getCompose input <*> getCompose partfun
   hoasToNamedAlg (AdvComp i niter body) = Compose $ iAdvComp i niter <$> getCompose body
+-}
 
+instance
+  nfuzziPos ~ WithPos NFuzziF => HOASToNamed (ExtensionF :&: Pos) nfuzziPos where
+  hoasToNamedAlg (BMap input f :&: pos) =
+    Compose $ iABMap pos <$> getCompose input <*> getCompose f
+  hoasToNamedAlg (BSum clip input :&: pos) =
+    Compose $ iABSum pos clip <$> getCompose input
+  hoasToNamedAlg (AMap input f :&: pos) =
+    Compose $ iAAMap pos <$> getCompose input <*> getCompose f
+  hoasToNamedAlg (Part nparts input partfun :&: pos) =
+    Compose $ iAPart pos nparts <$> getCompose input <*> getCompose partfun
+  hoasToNamedAlg (AdvComp i niter body :&: pos) =
+    Compose $ iAAdvComp pos i niter <$> getCompose body
+
+{-
 instance HOASToNamed PrivMechF NFuzziF where
-  hoasToNamedAlg (Laplace width center) = Compose $ iLaplace <$> getCompose width <*> getCompose center
+  hoasToNamedAlg (Laplace width center) =
+    Compose $ iLaplace <$> getCompose width <*> getCompose center
+-}
 
+instance
+  nfuzziPos ~ WithPos NFuzziF => HOASToNamed (PrivMechF :&: Pos) nfuzziPos where
+  hoasToNamedAlg (Laplace width center :&: pos) =
+    Compose $ iALaplace pos <$> getCompose width <*> getCompose center
+
+{-
 instance HOASToNamed EffF NFuzziF where
-  hoasToNamedAlg (Assign lhs rhs) = Compose $ iAssign <$> getCompose lhs <*> getCompose rhs
-  hoasToNamedAlg (Branch cond t f) = Compose $ iBranch <$> getCompose cond <*> getCompose t <*> getCompose f
-  hoasToNamedAlg (While cond body) = Compose $ iWhile <$> getCompose cond <*> getCompose body
+  hoasToNamedAlg (Assign lhs rhs) =
+    Compose $ iAssign <$> getCompose lhs <*> getCompose rhs
+  hoasToNamedAlg (Branch cond t f) =
+    Compose $ iBranch <$> getCompose cond <*> getCompose t <*> getCompose f
+  hoasToNamedAlg (While cond body) =
+    Compose $ iWhile <$> getCompose cond <*> getCompose body
+-}
+
+instance
+  nfuzziPos ~ WithPos NFuzziF => HOASToNamed (EffF :&: Pos) nfuzziPos where
+  hoasToNamedAlg (Assign lhs rhs :&: pos) =
+    Compose $ iAAssign pos <$> getCompose lhs <*> getCompose rhs
+  hoasToNamedAlg (Branch cond t f :&: pos) =
+    Compose $ iABranch pos <$> getCompose cond <*> getCompose t <*> getCompose f
+  hoasToNamedAlg (While cond body :&: pos) =
+    Compose $ iAWhile pos <$> getCompose cond <*> getCompose body

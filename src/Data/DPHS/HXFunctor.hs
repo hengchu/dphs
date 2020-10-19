@@ -1,11 +1,15 @@
 module Data.DPHS.HXFunctor where
 
+import Unsafe.Coerce
+
 import Data.DPHS.Name
 
 import Data.Comp.Multi.HFunctor
 import Data.Comp.Multi.Sum
 import Data.Comp.Multi.Term
 import Data.Comp.Multi.Algebra
+import Data.Comp.Multi.Annotation
+
 import Data.Functor.Compose
 
 -- |A higher-order exponential functor. Useful for embedding terms with HOAS
@@ -30,6 +34,11 @@ instance {-# OVERLAPPING #-}
       (\left -> inj $ hxmap f g left)
       (\right -> inj $ hxmap f g right)
 
+instance {-# OVERLAPPING #-}
+  HXFunctor h => HXFunctor (h :&: p) where
+  hxmap f g (term :&: p) =
+    hxmap @h f g term :&: p
+
 class HOASToNamed (h :: (* -> *) -> * -> *) (tgt :: (* -> *) -> * -> *) where
   -- |Algebra for converting a HOAS representation with carrier 'h' into a term
   -- that uses named representation 'tgt'. The conversion is provided a
@@ -50,3 +59,7 @@ hxcata _   (Hole term) = term
 hxcata alg (Term term) = alg . go $ term
   where
     go = hxmap (hxcata alg) Hole
+
+-- |Just like 'toCxt', but only needs an exponential functor.
+xtoCxt :: HXFunctor h => Term h a -> Context h f a
+xtoCxt = unsafeCoerce
