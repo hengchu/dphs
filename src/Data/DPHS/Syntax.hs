@@ -81,6 +81,7 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
           smartConstructors, smartAConstructors]
          [''ArithF])
 
+{-
 instance {-# OVERLAPPABLE #-}
   ArithF :<: tgt => HOASToNamed ArithF tgt where
   hoasToNamedAlg (IntLit v) = Compose . return $ iIntLit v
@@ -96,22 +97,40 @@ instance {-# OVERLAPPABLE #-}
   hoasToNamedAlg (Exp v) = Compose $ iExp <$> getCompose v
   hoasToNamedAlg (Log v) = Compose $ iLog <$> getCompose v
   hoasToNamedAlg (Sqrt v) = Compose $ iSqrt <$> getCompose v
+-}
 
 instance {-# OVERLAPPING #-}
-  ArithF :<: tgt => HOASToNamed (ArithF :&: Pos) (tgt :&: Pos) where
-  hoasToNamedAlg (IntLit v :&: pos) = Compose . return $ iAIntLit pos v
-  hoasToNamedAlg (FracLit v :&: pos) = Compose . return $ iAFracLit pos v
-  hoasToNamedAlg (Add v1 v2 :&: pos) = Compose $ iAAdd pos <$> getCompose v1 <*> getCompose v2
-  hoasToNamedAlg (Sub v1 v2 :&: pos) = Compose $ iASub pos <$> getCompose v1 <*> getCompose v2
-  hoasToNamedAlg (Abs v :&: pos) = Compose $ iAAbs pos <$> getCompose v
-  hoasToNamedAlg (Signum v :&: pos) = Compose $ iASignum pos <$> getCompose v
-  hoasToNamedAlg (Mult v1 v2 :&: pos) = Compose $ iAMult pos <$> getCompose v1 <*> getCompose v2
-  hoasToNamedAlg (Div v1 v2 :&: pos) = Compose $ iADiv pos <$> getCompose v1 <*> getCompose v2
-  hoasToNamedAlg (IDiv v1 v2 :&: pos) = Compose $ iAIDiv pos <$> getCompose v1 <*> getCompose v2
-  hoasToNamedAlg (IMod v1 v2 :&: pos) = Compose $ iAIMod pos <$> getCompose v1 <*> getCompose v2
-  hoasToNamedAlg (Exp v :&: pos) = Compose $ iAExp pos <$> getCompose v
-  hoasToNamedAlg (Log v :&: pos) = Compose $ iALog pos <$> getCompose v
-  hoasToNamedAlg (Sqrt v :&: pos) = Compose $ iASqrt pos <$> getCompose v
+  ( ArithF :<: tgt
+  , ArithF :&: Pos :<: WithPos tgt
+  , tgtPos ~ WithPos tgt
+  , DistAnn tgt Pos tgtPos
+  ) => HOASToNamed (ArithF :&: Pos) tgtPos where
+  hoasToNamedAlg (IntLit v :&: pos) =
+    Compose . return $ iAIntLit pos v
+  hoasToNamedAlg (FracLit v :&: pos) =
+    Compose . return $ iAFracLit pos v
+  hoasToNamedAlg (Add v1 v2 :&: pos) =
+    Compose $ iAAdd pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (Sub v1 v2 :&: pos) =
+    Compose $ iASub pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (Abs v :&: pos) =
+    Compose $ iAAbs pos <$> getCompose v
+  hoasToNamedAlg (Signum v :&: pos) =
+    Compose $ iASignum pos <$> getCompose v
+  hoasToNamedAlg (Mult v1 v2 :&: pos) =
+    Compose $ iAMult pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (Div v1 v2 :&: pos) =
+    Compose $ iADiv pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (IDiv v1 v2 :&: pos) =
+    Compose $ iAIDiv pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (IMod v1 v2 :&: pos) =
+    Compose $ iAIMod pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (Exp v :&: pos) =
+    Compose $ iAExp pos <$> getCompose v
+  hoasToNamedAlg (Log v :&: pos) =
+    Compose $ iALog pos <$> getCompose v
+  hoasToNamedAlg (Sqrt v :&: pos) =
+    Compose $ iASqrt pos <$> getCompose v
 
 -- |Basic comparison and boolean operations.
 data CompareF :: (* -> *) -> * -> * where
@@ -131,6 +150,7 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
           smartConstructors, smartAConstructors]
          [''CompareF])
 
+{-
 instance {-# OVERLAPPABLE #-}
   CompareF :<: tgt => HOASToNamed CompareF tgt where
   hoasToNamedAlg (IsEq v1 v2) = Compose $ iIsEq <$> getCompose v1 <*> getCompose v2
@@ -142,18 +162,32 @@ instance {-# OVERLAPPABLE #-}
   hoasToNamedAlg (Neg v) = Compose $ iNeg <$> getCompose v
   hoasToNamedAlg (And v1 v2) = Compose $ iAnd <$> getCompose v1 <*> getCompose v2
   hoasToNamedAlg (Or v1 v2) = Compose $ iOr <$> getCompose v1 <*> getCompose v2
+-}
 
 instance {-# OVERLAPPING #-}
-  CompareF :<: tgt => HOASToNamed (CompareF :&: Pos) (tgt :&: Pos) where
-  hoasToNamedAlg (IsEq v1 v2 :&: pos) = Compose $ iAIsEq pos <$> getCompose v1 <*> getCompose v2
-  hoasToNamedAlg (IsNeq v1 v2 :&: pos) = Compose $ iAIsNeq pos <$> getCompose v1 <*> getCompose v2
-  hoasToNamedAlg (IsLt v1 v2 :&: pos) = Compose $ iAIsLt pos <$> getCompose v1 <*> getCompose v2
-  hoasToNamedAlg (IsLe v1 v2 :&: pos) = Compose $ iAIsLe pos <$> getCompose v1 <*> getCompose v2
-  hoasToNamedAlg (IsGt v1 v2 :&: pos) = Compose $ iAIsGt pos <$> getCompose v1 <*> getCompose v2
-  hoasToNamedAlg (IsGe v1 v2 :&: pos) = Compose $ iAIsGe pos <$> getCompose v1 <*> getCompose v2
-  hoasToNamedAlg (Neg v :&: pos) = Compose $ iANeg pos <$> getCompose v
-  hoasToNamedAlg (And v1 v2 :&: pos) = Compose $ iAAnd pos <$> getCompose v1 <*> getCompose v2
-  hoasToNamedAlg (Or v1 v2 :&: pos) = Compose $ iAOr pos <$> getCompose v1 <*> getCompose v2
+  ( CompareF :<: tgt
+  , CompareF :&: Pos :<: WithPos tgt
+  , tgtPos ~ WithPos tgt
+  , DistAnn tgt Pos tgtPos
+  ) => HOASToNamed (CompareF :&: Pos) tgtPos where
+  hoasToNamedAlg (IsEq v1 v2 :&: pos) =
+    Compose $ iAIsEq pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (IsNeq v1 v2 :&: pos) =
+    Compose $ iAIsNeq pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (IsLt v1 v2 :&: pos) =
+    Compose $ iAIsLt pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (IsLe v1 v2 :&: pos) =
+    Compose $ iAIsLe pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (IsGt v1 v2 :&: pos) =
+    Compose $ iAIsGt pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (IsGe v1 v2 :&: pos) =
+    Compose $ iAIsGe pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (Neg v :&: pos) =
+    Compose $ iANeg pos <$> getCompose v
+  hoasToNamedAlg (And v1 v2 :&: pos) =
+    Compose $ iAAnd pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (Or v1 v2 :&: pos) =
+    Compose $ iAOr pos <$> getCompose v1 <*> getCompose v2
 
 -- |Embedded monadic syntax.
 data MonadF :: (* -> *) -> * -> * where
@@ -165,20 +199,32 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
           smartConstructors, smartAConstructors]
          [''MonadF])
 
+{-
 instance MonadF :<: tgt => HOASToNamed MonadF tgt where
-  hoasToNamedAlg (Bind ma kont) = Compose $ iBind <$> getCompose ma <*> getCompose kont
-  hoasToNamedAlg (Ret a) = Compose $ iRet <$> getCompose a
+  hoasToNamedAlg (Bind ma kont) =
+    Compose $ iBind <$> getCompose ma <*> getCompose kont
+  hoasToNamedAlg (Ret a) =
+    Compose $ iRet <$> getCompose a
+-}
 
-instance MonadF :<: tgt => HOASToNamed (MonadF :&: Pos) (tgt :&: Pos) where
-  hoasToNamedAlg (Bind ma kont :&: pos) = Compose $ iABind pos <$> getCompose ma <*> getCompose kont
-  hoasToNamedAlg (Ret a :&: pos) = Compose $ iARet pos <$> getCompose a
+instance
+  ( MonadF :<: tgt
+  , MonadF :&: Pos :<: tgtPos
+  , tgtPos ~ WithPos tgt
+  , DistAnn tgt Pos tgtPos
+  ) => HOASToNamed (MonadF :&: Pos) tgtPos where
+  hoasToNamedAlg (Bind ma kont :&: pos) =
+    Compose $ iABind pos <$> getCompose ma <*> getCompose kont
+  hoasToNamedAlg (Ret a :&: pos) =
+    Compose $ iARet pos <$> getCompose a
 
 instance Syntactic (Cxt hole lang f) (Cxt hole lang f a) where
   type DeepRepr (Cxt hole lang f a) = a
   toDeepRepr = id
   fromDeepRepr = id
 
-instance langPos ~ Annotate lang Pos => SyntacticPos lang (Term langPos a) where
+instance
+  langPos ~ Annotate lang Pos => SyntacticPos lang (Term langPos a) where
   type DeepRepr' (Term langPos a) = a
   toDeepRepr' = id
   fromDeepRepr' = id
@@ -278,6 +324,7 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
           smartConstructors, smartAConstructors]
          [''LambdaF])
 
+{-
 instance {-# OVERLAPPABLE #-}
   LambdaF :<: tgt => HOASToNamed XLambdaF tgt where
   hoasToNamedAlg (XLam f) = Compose $ do
@@ -286,9 +333,14 @@ instance {-# OVERLAPPABLE #-}
     return (iLam x body)
   hoasToNamedAlg (XApp f arg) = Compose $ iApp <$> getCompose f <*> getCompose arg
   hoasToNamedAlg (XVar fv) = Compose . return $ iVar fv
+-}
 
 instance {-# OVERLAPPING #-}
-  LambdaF :<: tgt => HOASToNamed (XLambdaF :&: Pos) (tgt :&: Pos) where
+  ( LambdaF :<: tgt
+  , LambdaF :&: Pos :<: tgtPos
+  , tgtPos ~ WithPos tgt
+  , DistAnn tgt Pos tgtPos
+  ) => HOASToNamed (XLambdaF :&: Pos) tgtPos where
   hoasToNamedAlg (XLam f :&: pos) = Compose $ do
     x <- V <$> gfresh "x"
     body <- getCompose $ f (Compose . return . iAVar pos $ x)

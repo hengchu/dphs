@@ -29,7 +29,7 @@ ex1 = do
 deepEx1 :: Term (WithPos FuzziF) (FuzziM ())
 deepEx1 = toDeepRepr' ex1
 
-namedEx1 :: FreshM m => m (Term (NFuzziF :&: Pos) (FuzziM ()))
+namedEx1 :: FreshM m => m (Term (WithPos NFuzziF) (FuzziM ()))
 namedEx1 = getCompose $ hxcata (hoasToNamedAlg @(WithPos FuzziF)) (xtoCxt deepEx1)
 
 {-

@@ -9,11 +9,13 @@ import Type.Reflection hiding (App)
 import qualified Data.Map.Strict as M
 
 import Data.Comp.Multi.Algebra
+import Data.Comp.Multi.Annotation
 import Data.Comp.Multi.Derive
 import Data.Comp.Multi.HFunctor
 import Data.Comp.Multi.Term hiding (Cxt)
 import Optics
 
+import Data.DPHS.SrcLoc
 import Data.DPHS.Algebra
 import Data.DPHS.Fuzzi
 import Data.DPHS.Syntax
@@ -148,7 +150,7 @@ data Ty m =
       tyFunType :: Ty m -> Typechecker m
     }
 
-data TypeError =
+data TypeErrorKind =
   InternalError String
   | UnknownVariable AnyVariable
   | LogNonPositiveConstant Double
@@ -159,7 +161,15 @@ data TypeError =
   | LoopBodyAddsPrivacyCost
   deriving (Show, Eq, Ord)
 
+data TypeError = TypeError {
+  typeErrorKind :: TypeErrorKind,
+  typeErrorPosition :: Pos
+  } deriving (Show, Eq)
+
 instance Exception TypeError
+instance Exception TypeErrorKind
+
+makeFieldLabels ''TypeError
 
 allAtomic :: MonadThrow m => Cxt m -> m (M.Map AnyVariable InternalSens)
 allAtomic cxt = traverse go cxt
@@ -223,13 +233,12 @@ instance
   ) => TyCheck h where
   tyCheckAlg = prodAlg sensCheckAlg assignFormAlg
 
-
 unwrapOr :: (MonadThrow m, Exception e) => e -> Maybe a -> m a
 unwrapOr _ (Just a) = return a
 unwrapOr e Nothing  = throwM e
 
-instance SensCheck LambdaF where
-  sensCheckAlg (Lam x (unK -> checkBody)) =
+instance SensCheck (LambdaF :&: Pos) where
+  sensCheckAlg (Lam x (unK -> checkBody) :&: _pos) =
     K $ \outerCxt ->
     let funTy = review _FunTy $ \argTy innerCxt -> do
           let xvar = AnyVariable x
@@ -237,44 +246,45 @@ instance SensCheck LambdaF where
           (postCxt, postTy, eps, delta) <- checkBody innerCxt'
           return (M.delete xvar postCxt, postTy, eps, delta)
     in return $ (outerCxt, funTy, 0, 0)
-  sensCheckAlg (App (unK -> checkFun) (unK -> checkArg)) =
+  sensCheckAlg (App (unK -> checkFun) (unK -> checkArg) :&: pos) =
     K $ \cxt -> do
     (postArgCxt, argTy, epsArg, deltaArg) <- checkArg cxt
     (_, funTy, _, _) <- checkFun postArgCxt
     funTc <- preview #funType funTy &
-      unwrapOr (InternalError "expected function type")
+      unwrapOr (TypeError (InternalError "expected function type") pos)
     (postCxt, resultTy, epsApp, deltaApp) <- funTc argTy postArgCxt
     return (postCxt, resultTy, epsArg + epsApp, deltaArg + deltaApp)
-  sensCheckAlg (Var x) =
+  sensCheckAlg (Var x :&: pos) =
     K $ \cxt -> do
     let xvar = AnyVariable x
-    xTy <- M.lookup xvar cxt & unwrapOr (UnknownVariable xvar)
+    xTy <- M.lookup xvar cxt & unwrapOr (TypeError (UnknownVariable xvar) pos)
     return (cxt, xTy, 0, 0)
 
-instance SensCheck MonadF where
-  sensCheckAlg (Bind (unK -> checkPre) (unK -> checkPost)) =
+instance SensCheck (MonadF :&: Pos) where
+  sensCheckAlg (Bind (unK -> checkPre) (unK -> checkPost) :&: pos) =
     K $ \preCxt -> do
     (middleCxt, middleTy, epsPre, deltaPre) <- checkPre preCxt
     (_, postFunTy :: Ty _, _, _) <- checkPost middleCxt
     postFunTc <- preview #funType postFunTy &
-      unwrapOr (InternalError "expected function type")
+      unwrapOr (TypeError (InternalError "expected function type") pos)
     (postCxt, postTy, epsPost, deltaPost) <- postFunTc middleTy middleCxt
     return (postCxt, postTy, epsPre + epsPost, deltaPre + deltaPost)
-  sensCheckAlg (Ret (unK -> check)) =
+  sensCheckAlg (Ret (unK -> check) :&: _pos) =
     K check
 
 tyCheckBinop :: MonadThrow m
              => (InternalSens -> InternalSens -> InternalSens)
+             -> Pos
              -> Typechecker m
              -> Typechecker m
              -> K (Typechecker m) a
-tyCheckBinop joinTy checkLhs checkRhs = K $ \cxt -> do
+tyCheckBinop joinTy pos checkLhs checkRhs = K $ \cxt -> do
   (cxt1, lhsTy, eps1, delta1) <- checkLhs cxt
   (cxt2, rhsTy, eps2, delta2) <- checkRhs cxt1
   lhsSens <- preview #sensitivity lhsTy
-               & unwrapOr (InternalError "expected atomic sensitivity")
+               & unwrapOr (TypeError (InternalError "expected atomic sensitivity") pos)
   rhsSens <- preview #sensitivity rhsTy
-               & unwrapOr (InternalError "expected atomic sensitivity")
+               & unwrapOr (TypeError (InternalError "expected atomic sensitivity") pos)
   return (cxt2, AtomicTy $ lhsSens `joinTy` rhsSens, eps1+eps2, delta1+delta2)
 
 sensLog :: MonadThrow m => InternalSens -> m InternalSens
@@ -293,102 +303,115 @@ sensSqrt (approx -> s)
   | s == 0 = return $ InternalSensSensitive 0
   | otherwise = return $ InternalSensSensitive infinity
 
-instance SensCheck ArithF where
-  sensCheckAlg (IntLit k) = K $ \cxt -> return (cxt, atomicConst (realToFrac k), 0, 0)
-  sensCheckAlg (FracLit k) = K $ \cxt -> return (cxt, atomicConst (realToFrac k), 0, 0)
-  sensCheckAlg (Add (unK -> checkLhs) (unK -> checkRhs)) =
-    tyCheckBinop sensAdd checkLhs checkRhs
-  sensCheckAlg (Sub (unK -> checkLhs) (unK -> checkRhs)) =
-    tyCheckBinop sensSub checkLhs checkRhs
-  sensCheckAlg (Abs (unK -> check)) =
+instance SensCheck (ArithF :&: Pos) where
+  sensCheckAlg (IntLit k :&: _pos) =
+    K $ \cxt -> return (cxt, atomicConst (realToFrac k), 0, 0)
+  sensCheckAlg (FracLit k :&: _pos) =
+    K $ \cxt -> return (cxt, atomicConst (realToFrac k), 0, 0)
+  sensCheckAlg (Add (unK -> checkLhs) (unK -> checkRhs) :&: pos) =
+    tyCheckBinop sensAdd pos checkLhs checkRhs
+  sensCheckAlg (Sub (unK -> checkLhs) (unK -> checkRhs) :&: pos) =
+    tyCheckBinop sensSub pos checkLhs checkRhs
+  sensCheckAlg (Abs (unK -> check) :&: pos) =
     K $ \cxt -> do
     (cxt', ty, eps, delta) <- check cxt
     sens <- preview #sensitivity ty
-              & unwrapOr (InternalError "expected atomic sensitivity")
+              & unwrapOr (TypeError (InternalError "expected atomic sensitivity") pos)
     return (cxt', AtomicTy $ sensAbs sens, eps, delta)
-  sensCheckAlg (Signum (unK -> check)) =
+  sensCheckAlg (Signum (unK -> check) :&: pos) =
     K $ \cxt -> do
     (cxt', ty, eps, delta) <- check cxt
     sens <- preview #sensitivity ty
-              & unwrapOr (InternalError "expected atomic sensitivity")
+              & unwrapOr (TypeError (InternalError "expected atomic sensitivity") pos)
     return (cxt', AtomicTy $ sensSignum sens, eps, delta)
-  sensCheckAlg (Mult (unK -> checkLhs) (unK -> checkRhs)) =
-    tyCheckBinop sensMult checkLhs checkRhs
-  sensCheckAlg (Div (unK -> checkLhs) (unK -> checkRhs)) =
-    tyCheckBinop sensDiv checkLhs checkRhs
-  sensCheckAlg (IDiv (unK -> checkLhs) (unK -> checkRhs)) =
-    tyCheckBinop sensIDiv checkLhs checkRhs
-  sensCheckAlg (IMod (unK -> checkLhs) (unK -> checkRhs)) =
-    tyCheckBinop sensIMod checkLhs checkRhs
-  sensCheckAlg (Exp (unK -> check)) =
+  sensCheckAlg (Mult (unK -> checkLhs) (unK -> checkRhs) :&: pos) =
+    tyCheckBinop sensMult pos checkLhs checkRhs
+  sensCheckAlg (Div (unK -> checkLhs) (unK -> checkRhs) :&: pos) =
+    tyCheckBinop sensDiv pos checkLhs checkRhs
+  sensCheckAlg (IDiv (unK -> checkLhs) (unK -> checkRhs) :&: pos) =
+    tyCheckBinop sensIDiv pos checkLhs checkRhs
+  sensCheckAlg (IMod (unK -> checkLhs) (unK -> checkRhs) :&: pos) =
+    tyCheckBinop sensIMod pos checkLhs checkRhs
+  sensCheckAlg (Exp (unK -> check) :&: pos) =
     K $ \cxt -> do
     (cxt', ty, eps, delta) <- check cxt
     sens <- preview #sensitivity ty
-              & unwrapOr (InternalError "expected atomic sensitivity")
+              & unwrapOr (TypeError (InternalError "expected atomic sensitivity") pos)
     return (cxt', AtomicTy $ sensExp sens, eps, delta)
-  sensCheckAlg (Log (unK -> check)) =
+  sensCheckAlg (Log (unK -> check) :&: pos) =
     K $ \cxt -> do
     (cxt', ty, eps, delta) <- check cxt
     sens <- preview #sensitivity ty
-              & unwrapOr (InternalError "expected atomic sensitivity")
+              & unwrapOr (TypeError (InternalError "expected atomic sensitivity") pos)
     newSens <- sensLog sens
     return (cxt', AtomicTy newSens, eps, delta)
-  sensCheckAlg (Sqrt (unK -> check)) =
+  sensCheckAlg (Sqrt (unK -> check) :&: pos) =
     K $ \cxt -> do
     (cxt', ty, eps, delta) <- check cxt
     sens <- preview #sensitivity ty
-              & unwrapOr (InternalError "expected atomic sensitivity")
+              & unwrapOr (TypeError (InternalError "expected atomic sensitivity") pos)
     newSens <- sensSqrt sens
     return (cxt', AtomicTy newSens, eps, delta)
 
-instance SensCheck CompareF where
-  sensCheckAlg (IsEq (unK -> checkLhs) (unK -> checkRhs)) =
-    tyCheckBinop sensBoolBinop checkLhs checkRhs
-  sensCheckAlg (IsNeq (unK -> checkLhs) (unK -> checkRhs)) =
-    tyCheckBinop sensBoolBinop checkLhs checkRhs
-  sensCheckAlg (IsLt (unK -> checkLhs) (unK -> checkRhs)) =
-    tyCheckBinop sensBoolBinop checkLhs checkRhs
-  sensCheckAlg (IsLe (unK -> checkLhs) (unK -> checkRhs)) =
-    tyCheckBinop sensBoolBinop checkLhs checkRhs
-  sensCheckAlg (IsGt (unK -> checkLhs) (unK -> checkRhs)) =
-    tyCheckBinop sensBoolBinop checkLhs checkRhs
-  sensCheckAlg (IsGe (unK -> checkLhs) (unK -> checkRhs)) =
-    tyCheckBinop sensBoolBinop checkLhs checkRhs
-  sensCheckAlg (And (unK -> checkLhs) (unK -> checkRhs)) =
-    tyCheckBinop sensBoolBinop checkLhs checkRhs
-  sensCheckAlg (Or (unK -> checkLhs) (unK -> checkRhs)) =
-    tyCheckBinop sensBoolBinop checkLhs checkRhs
-  sensCheckAlg (Neg (unK -> check)) = K check
+instance SensCheck (CompareF :&: Pos) where
+  sensCheckAlg (IsEq (unK -> checkLhs) (unK -> checkRhs) :&: pos) =
+    tyCheckBinop sensBoolBinop pos checkLhs checkRhs
+  sensCheckAlg (IsNeq (unK -> checkLhs) (unK -> checkRhs) :&: pos) =
+    tyCheckBinop sensBoolBinop pos checkLhs checkRhs
+  sensCheckAlg (IsLt (unK -> checkLhs) (unK -> checkRhs) :&: pos) =
+    tyCheckBinop sensBoolBinop pos checkLhs checkRhs
+  sensCheckAlg (IsLe (unK -> checkLhs) (unK -> checkRhs) :&: pos) =
+    tyCheckBinop sensBoolBinop pos checkLhs checkRhs
+  sensCheckAlg (IsGt (unK -> checkLhs) (unK -> checkRhs) :&: pos) =
+    tyCheckBinop sensBoolBinop pos checkLhs checkRhs
+  sensCheckAlg (IsGe (unK -> checkLhs) (unK -> checkRhs) :&: pos) =
+    tyCheckBinop sensBoolBinop pos checkLhs checkRhs
+  sensCheckAlg (And (unK -> checkLhs) (unK -> checkRhs) :&: pos) =
+    tyCheckBinop sensBoolBinop pos checkLhs checkRhs
+  sensCheckAlg (Or (unK -> checkLhs) (unK -> checkRhs) :&: pos) =
+    tyCheckBinop sensBoolBinop pos checkLhs checkRhs
+  sensCheckAlg (Neg (unK -> check) :&: _pos) = K check
 
-instance SensCheck ExprF where
-  sensCheckAlg (Deref x) =
+instance SensCheck (ExprF :&: Pos) where
+  sensCheckAlg (Deref x :&: pos) =
     K $ \cxt -> do
-      xTy <- M.lookup xvar cxt & unwrapOr (UnknownVariable xvar)
+      xTy <- M.lookup xvar cxt & unwrapOr (TypeError (UnknownVariable xvar) pos)
       return (cxt, xTy, 0, 0)
     where xvar = AnyVariable x
-  sensCheckAlg (Index (unK -> checkArr) (unK -> checkIdx)) =
+  sensCheckAlg (Index (unK -> checkArr) (unK -> checkIdx) :&: pos) =
     K $ \cxt -> do
       (cxt1, arrTy, eps1, delta1) <- checkArr cxt
       (cxt2, idxTy, eps2, delta2) <- checkIdx cxt1
-      idxSens <- preview #sensitivity idxTy
-                   & unwrapOr (InternalError "expecting atomic sensitivity")
+      idxSens <-
+        preview #sensitivity idxTy
+          & unwrapOr (TypeError (InternalError "expecting atomic sensitivity") pos)
       case approx idxSens of
-        0 -> return (cxt2, arrTy, eps1+eps2, delta1+delta2)
-        _ -> return (cxt2, AtomicTy $ InternalSensSensitive infinity, eps1+eps2, delta1+delta2)
-  sensCheckAlg (ArrLit (map unK -> checkElems)) =
+        0 -> return (cxt2,
+                     arrTy,
+                     eps1+eps2,
+                     delta1+delta2)
+        _ -> return (cxt2,
+                     AtomicTy $ InternalSensSensitive infinity,
+                     eps1+eps2,
+                     delta1+delta2)
+  sensCheckAlg (ArrLit (map unK -> checkElems) :&: pos) =
     K $ \cxt -> do
       (cxt', elemTys, eps, delta) <- foldrM go (cxt, [], 0, 0) checkElems
-      elemsSens <- traverse (unwrapOr (InternalError "expected atomic sensitivity") . preview #sensitivity) elemTys
+      elemsSens <-
+        traverse
+          (unwrapOr (TypeError (InternalError "expected atomic sensitivity") pos)
+           . preview #sensitivity)
+          elemTys
       return $ (cxt', AtomicTy $ foldr sensAdd (InternalSensSensitive 0) elemsSens, eps, delta)
     where go checkFun (lastCxt, tyAcc, epsAcc, deltaAcc) = do
             (cxt', ty, eps, delta) <- checkFun lastCxt
             return (cxt', ty:tyAcc, eps+epsAcc, delta+deltaAcc)
 
-instance {-# OVERLAPPING #-} AssignFormCheck ExprF where
-  assignFormAlg (Deref x) =
+instance {-# OVERLAPPING #-} AssignFormCheck (ExprF :&: Pos) where
+  assignFormAlg (Deref x :&: _pos) =
     let xvar = AnyVariable x in
       K $ IsAssignForm xvar (\cxt ty -> return $ M.insert xvar ty cxt)
-  assignFormAlg (Index (unK -> arr) _) =
+  assignFormAlg (Index (unK -> arr) _ :&: pos) =
     case arr of
       IsAssignForm var _ -> K $ IsAssignForm var (newEff var)
       NotAssignment -> K NotAssignment
@@ -397,39 +420,39 @@ instance {-# OVERLAPPING #-} AssignFormCheck ExprF where
               Nothing -> return $ M.insert var ty cxt
               Just ty' -> do
                 sens <- preview #sensitivity ty
-                          & unwrapOr (InternalError "expected atomic sensitivity")
+                          & unwrapOr (TypeError (InternalError "expected atomic sensitivity") pos)
                 sens' <- preview #sensitivity ty'
-                          & unwrapOr (InternalError "expected atomic sensitivity")
+                          & unwrapOr (TypeError (InternalError "expected atomic sensitivity") pos)
                 return $ M.insert var (AtomicTy (sens `sensAdd` sens')) cxt
   assignFormAlg _ = K NotAssignment
 
-instance SensCheck PrivMechF where
-  sensCheckAlg (Laplace (unK -> checkWidth) (unK -> checkCenter)) =
+instance SensCheck (PrivMechF :&: Pos) where
+  sensCheckAlg (Laplace (unK -> checkWidth) (unK -> checkCenter) :&: pos) =
     K $ \cxt -> do
     (cxt1, widthTy, eps1, delta1) <- checkWidth cxt
     (cxt2, centerTy, eps2, delta2) <- checkCenter cxt1
     widthSens <- preview #sensitivity widthTy
-                   & unwrapOr (InternalError "expecting an atomic sensitivity")
+                   & unwrapOr (TypeError (InternalError "expecting an atomic sensitivity") pos)
     centerSens <- preview #sensitivity centerTy
-                   & unwrapOr (InternalError "expecting an atomic sensitivity")
+                   & unwrapOr (TypeError (InternalError "expecting an atomic sensitivity") pos)
     case {-traceShow widthSens $ -}widthSens of
       InternalSensConst width ->
         return (cxt2,
                 AtomicTy $ InternalSensSensitive 0,
                 approx centerSens / width + eps1 + eps2,
                 delta1 + delta2)
-      _ -> throwM LaplaceWidthMustBeConstant
+      _ -> throwM (TypeError LaplaceWidthMustBeConstant pos)
 
-instance SensCheck EffF where
-  sensCheckAlg (Assign _ _) =
-    K $ \_ -> throwM (InternalError "this branch should never run")
-  sensCheckAlg (Branch (unK -> checkCond) (unK -> checkTrue) (unK -> checkFalse)) =
+instance SensCheck (EffF :&: Pos) where
+  sensCheckAlg (Assign _ _ :&: pos) =
+    K $ \_ -> throwM (TypeError (InternalError "this branch should never run") pos)
+  sensCheckAlg (Branch (unK -> checkCond) (unK -> checkTrue) (unK -> checkFalse) :&: pos) =
     K $ \cxt -> do
     (cxt1, condTy, epsCond,  deltaCond)  <- checkCond  cxt
     (cxt2, _,      epsTrue,  deltaTrue)  <- checkTrue  cxt1
     (cxt3, _,      epsFalse, deltaFalse) <- checkFalse cxt2
     condSens <- preview #sensitivity condTy
-                  & unwrapOr (InternalError "expected atomic sensitivity")
+                  & unwrapOr (TypeError (InternalError "expected atomic sensitivity") pos)
     case approx condSens of
       0 -> do
         cxt' <- pointwiseMax cxt2 cxt3
@@ -437,39 +460,39 @@ instance SensCheck EffF where
                 AtomicTy $ InternalSensSensitive 0,
                 epsCond + max epsTrue epsFalse,
                 deltaCond + max deltaTrue deltaFalse)
-      _ -> throwM BranchOnSensitiveCondition
+      _ -> throwM (TypeError BranchOnSensitiveCondition pos)
     where
       -- TODO: impl this
       pointwiseMax :: MonadThrow m => Cxt m -> Cxt m -> m (Cxt m)
       pointwiseMax cxt1 _cxt2 = return cxt1
-  sensCheckAlg (While (unK -> checkCond) (unK -> checkBody)) =
+  sensCheckAlg (While (unK -> checkCond) (unK -> checkBody) :&: pos) =
     K $ \cxt -> do
     (cxt1, condTy, epsCond, deltaCond) <- checkCond cxt
     (cxt2, _,      epsBody, deltaBody) <- checkBody cxt1
     isInvariant <- checkInvariance cxt1 cxt2
     condSens <- preview #sensitivity condTy
-                  & unwrapOr (InternalError "expected atomic sensitivity")
+                  & unwrapOr (TypeError (InternalError "expected atomic sensitivity") pos)
     when (approx condSens /= 0) $
-      throwM BranchOnSensitiveCondition
+      throwM (TypeError BranchOnSensitiveCondition pos)
     when (not isInvariant) $
-      throwM CannotDetermineLoopInvariantContext
+      throwM (TypeError CannotDetermineLoopInvariantContext pos)
     case (epsBody, deltaBody) of
       (0, 0) -> return (cxt2, AtomicTy $ InternalSensSensitive 0, epsCond, deltaCond)
-      _      -> throwM LoopBodyAddsPrivacyCost
+      _      -> throwM (TypeError LoopBodyAddsPrivacyCost pos)
     where
       -- TODO: implement this
       checkInvariance :: MonadThrow m => Cxt m -> Cxt m -> m Bool
       checkInvariance _ _ = return True
 
-instance SensCheck ExtensionF where
+instance SensCheck (ExtensionF :&: Pos) where
 
-instance TyCheck ExprF where
-  tyCheckAlg (Index arr idx) =
+instance TyCheck (ExprF :&: Pos) where
+  tyCheckAlg (Index arr idx :&: pos) =
     Prod sens assn
     where
       Prod (unK -> checkSensArr) (unK -> assignArr) = arr
       Prod (unK -> checkSensIdx) (unK -> assignIdx) = idx
-      sens = sensCheckAlg $ Index (K checkSensArr) (K checkSensIdx)
+      sens = sensCheckAlg $ Index (K checkSensArr) (K checkSensIdx) :&: pos
       assn = K $
         case unK . assignFormAlg $ Index (K assignArr) (K assignIdx) of
           NotAssignment -> NotAssignment
@@ -483,8 +506,8 @@ instance TyCheck ExprF where
 
   tyCheckAlg a = prodAlg sensCheckAlg assignFormAlg a
 
-instance TyCheck EffF where
-  tyCheckAlg (Assign lhs rhs) =
+instance TyCheck (EffF :&: Pos) where
+  tyCheckAlg (Assign lhs rhs :&: pos) =
     Prod sens assn
     where
       Prod _                     (unK -> assignLhs) = lhs
@@ -492,7 +515,7 @@ instance TyCheck EffF where
       sens = K $ \cxt -> do
         (cxt', rhsTy, eps, delta) <- checkSensRhs cxt
         assignEff <- preview #effect assignLhs
-                       & unwrapOr (InternalError "expected assignment form")
+                       & unwrapOr (TypeError (InternalError "expected assignment form") pos)
         updatedCxt' <- assignEff cxt' rhsTy
         return (updatedCxt', AtomicTy $ InternalSensSensitive 0, eps, delta)
       assn = assignFormAlg $ Assign (K assignLhs) (K assignRhs)
@@ -500,5 +523,5 @@ instance TyCheck EffF where
   tyCheckAlg a = prodAlg sensCheckAlg assignFormAlg a
 
 -- |The top-level typechecker for a 'Fuzzi' program.
-tyCheck :: MonadThrow m => Term NFuzziF a -> Typechecker m
+tyCheck :: MonadThrow m => Term (WithPos NFuzziF) a -> Typechecker m
 tyCheck = unK . prj1 . cata tyCheckAlg

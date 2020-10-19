@@ -9,7 +9,11 @@ import Data.Comp.Multi.Sum
 newtype Pos = Pos {
   posSrcLoc :: Maybe SrcLoc
   }
-  deriving (Show, Eq)
+  deriving (Eq)
+
+instance Show Pos where
+  show (Pos (Just srcloc)) = prettySrcLoc srcloc
+  show (Pos Nothing) = "<unknown location>"
 
 noPos :: Pos
 noPos = Pos Nothing

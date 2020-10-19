@@ -276,6 +276,7 @@ instance Floating a => Floating (FuzziM a) where
   acosh = fmap acosh
   atanh = fmap atanh
 
+{-
 instance HOASToNamed ExprF NFuzziF where
   hoasToNamedAlg (Deref var) =
     Compose . return $ iDeref var
@@ -283,8 +284,10 @@ instance HOASToNamed ExprF NFuzziF where
     Compose $ iIndex <$> getCompose e <*> getCompose idx
   hoasToNamedAlg (ArrLit es) =
     Compose $ iArrLit <$> traverse getCompose es
+-}
 
-instance HOASToNamed (ExprF :&: Pos) (NFuzziF :&: Pos) where
+instance
+  nfuzziPos ~ WithPos NFuzziF => HOASToNamed (ExprF :&: Pos) nfuzziPos where
   hoasToNamedAlg (Deref var :&: pos) =
     Compose . return $ iADeref pos var
   hoasToNamedAlg (Index e idx :&: pos) =
@@ -292,14 +295,17 @@ instance HOASToNamed (ExprF :&: Pos) (NFuzziF :&: Pos) where
   hoasToNamedAlg (ArrLit es :&: pos) =
     Compose $ iAArrLit pos <$> traverse getCompose es
 
+{-
 instance HOASToNamed ExtensionF NFuzziF where
   hoasToNamedAlg (BMap input f) = Compose $ iBMap <$> getCompose input <*> getCompose f
   hoasToNamedAlg (BSum clip input) = Compose $ iBSum clip <$> getCompose input
   hoasToNamedAlg (AMap input f) = Compose $ iAMap <$> getCompose input <*> getCompose f
   hoasToNamedAlg (Part nparts input partfun) = Compose $ iPart nparts <$> getCompose input <*> getCompose partfun
   hoasToNamedAlg (AdvComp i niter body) = Compose $ iAdvComp i niter <$> getCompose body
+-}
 
-instance HOASToNamed (ExtensionF :&: Pos) (NFuzziF :&: Pos) where
+instance
+  nfuzziPos ~ WithPos NFuzziF => HOASToNamed (ExtensionF :&: Pos) nfuzziPos where
   hoasToNamedAlg (BMap input f :&: pos) =
     Compose $ iABMap pos <$> getCompose input <*> getCompose f
   hoasToNamedAlg (BSum clip input :&: pos) =
@@ -311,14 +317,18 @@ instance HOASToNamed (ExtensionF :&: Pos) (NFuzziF :&: Pos) where
   hoasToNamedAlg (AdvComp i niter body :&: pos) =
     Compose $ iAAdvComp pos i niter <$> getCompose body
 
+{-
 instance HOASToNamed PrivMechF NFuzziF where
   hoasToNamedAlg (Laplace width center) =
     Compose $ iLaplace <$> getCompose width <*> getCompose center
+-}
 
-instance HOASToNamed (PrivMechF :&: Pos) (NFuzziF :&: Pos) where
+instance
+  nfuzziPos ~ WithPos NFuzziF => HOASToNamed (PrivMechF :&: Pos) nfuzziPos where
   hoasToNamedAlg (Laplace width center :&: pos) =
     Compose $ iALaplace pos <$> getCompose width <*> getCompose center
 
+{-
 instance HOASToNamed EffF NFuzziF where
   hoasToNamedAlg (Assign lhs rhs) =
     Compose $ iAssign <$> getCompose lhs <*> getCompose rhs
@@ -326,8 +336,10 @@ instance HOASToNamed EffF NFuzziF where
     Compose $ iBranch <$> getCompose cond <*> getCompose t <*> getCompose f
   hoasToNamedAlg (While cond body) =
     Compose $ iWhile <$> getCompose cond <*> getCompose body
+-}
 
-instance HOASToNamed (EffF :&: Pos) (NFuzziF :&: Pos) where
+instance
+  nfuzziPos ~ WithPos NFuzziF => HOASToNamed (EffF :&: Pos) nfuzziPos where
   hoasToNamedAlg (Assign lhs rhs :&: pos) =
     Compose $ iAAssign pos <$> getCompose lhs <*> getCompose rhs
   hoasToNamedAlg (Branch cond t f :&: pos) =
