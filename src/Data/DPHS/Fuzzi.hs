@@ -38,6 +38,11 @@ data ExprF :: (* -> *) -> * -> * where
         -> r (FuzziM Int)
         -> ExprF r (FuzziM a)
 
+  -- |Resize an array.
+  Resize :: r (FuzziM (Array a))
+         -> r (FuzziM Int)
+         -> ExprF r (FuzziM (Array a))
+
   -- |Literal array value.
   ArrLit :: [r (FuzziM a)]
          -> ExprF r (FuzziM (Array a))
@@ -49,6 +54,7 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
 instance ShowHF ExprF where
   showHF (Deref (V v)) = K (show v)
   showHF (Index e idx) = K (printf "%s[%s]" (unK e) (unK idx))
+  showHF (Resize e len) = K (printf "resize(%s, %s)" (unK e) (unK len))
   showHF (ArrLit es) = K (printf "[%s]" contents)
     where contents = (concat . intersperse ", " . map unK) es
 
@@ -59,6 +65,8 @@ instance EqHF ExprF where
       Nothing -> False
 
   eqHF (Index a1 idx1) (Index a2 idx2) = keq a1 a2 && keq idx1 idx2
+
+  eqHF (Resize a1 len1) (Resize a2 len2) = keq a1 a2 && keq len1 len2
 
   eqHF (ArrLit vs1) (ArrLit vs2) =
     length vs1 == length vs2 && all (uncurry keq) (zip vs1 vs2)
@@ -72,14 +80,20 @@ instance OrdHF ExprF where
       Nothing -> compare (SomeTypeRep tr1) (SomeTypeRep tr2)
     where tr1 = typeRep @a1
           tr2 = typeRep @a2
-  compareHF (Deref _) _ = LT
+  compareHF Deref{} _ = LT
 
-  compareHF (Index _ _) (Deref _) = GT
+  compareHF Index{} Deref{} = GT
   compareHF (Index a1 idx1) (Index a2 idx2) = kcompare a1 a2 <> kcompare idx1 idx2
-  compareHF (Index _ _) _ = LT
+  compareHF Index{} _ = LT
 
-  compareHF (ArrLit _) (Deref _) = GT
-  compareHF (ArrLit _) (Index _ _) = GT
+  compareHF Resize{} Deref{} = GT
+  compareHF Resize{} Index{} = GT
+  compareHF (Resize a1 len1) (Resize a2 len2) = kcompare a1 a2 <> kcompare len1 len2
+  compareHF Resize{} _ = LT
+
+  compareHF ArrLit{} Deref{} = GT
+  compareHF ArrLit{} Index{} = GT
+  compareHF ArrLit{} Resize{} = GT
   compareHF (ArrLit vs1) (ArrLit vs2) = compareList vs1 vs2
 
 compareList :: KOrd r => [r a] -> [r b] -> Ordering
@@ -124,7 +138,8 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
          [''PrivMechF])
 
 data EffF :: (* -> *) -> * -> * where
-  Assign :: r (FuzziM a)            -- ^ the lhs expression to be assigned
+  Assign :: Typeable a
+         => Variable a              -- ^ the variable to be assigned to
          -> r (FuzziM a)            -- ^ the rhs expression to assign to the lhs
          -> EffF r (FuzziM ())
   Branch :: r (FuzziM Bool)         -- ^ branch condition
@@ -136,9 +151,44 @@ data EffF :: (* -> *) -> * -> * where
          -> EffF r (FuzziM ())
 
 $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
-          makeShowHF, makeEqHF, makeOrdHF,
+          {-makeShowHF, makeEqHF, makeOrdHF,-}
           smartConstructors, smartAConstructors]
          [''EffF])
+
+instance ShowHF EffF where
+  showHF (Assign (V var) rhs) = K (printf "%s = %s" (show var) (unK rhs))
+  showHF (Branch cond c1 c2) = K (printf "if %s then %s else %s end" (unK cond) (unK c1) (unK c2))
+  showHF (While cond c) = K (printf "while %s do %s end" (unK cond) (unK c))
+
+instance EqHF EffF where
+  eqHF (Assign (v1 :: Variable a1) rhs1) (Assign (v2 :: Variable a2) rhs2) =
+    case eqTypeRep (typeRep @a1) (typeRep @a2) of
+      Just HRefl -> v1 == v2 && keq rhs1 rhs2
+      Nothing -> False
+  eqHF (Branch cond1 c11 c21) (Branch cond2 c12 c22) =
+    keq cond1 cond2 && keq c11 c12 && keq c21 c22
+  eqHF (While cond1 c1) (While cond2 c2) =
+    keq cond1 cond2 && keq c1 c2
+  eqHF _ _ = False
+
+instance OrdHF EffF where
+  compareHF (Assign (v1 :: Variable a1) rhs1) (Assign (v2 :: Variable a2) rhs2) =
+    case eqTypeRep tr1 tr2 of
+      Just HRefl -> compare v1 v2 <> kcompare rhs1 rhs2
+      Nothing -> compare (SomeTypeRep tr1) (SomeTypeRep tr2)
+    where tr1 = typeRep @a1
+          tr2 = typeRep @a2
+  compareHF Assign{} _ = LT
+
+  compareHF Branch{} Assign{} = GT
+  compareHF (Branch cond1 c11 c21) (Branch cond2 c12 c22) =
+    kcompare cond1 cond2 <> kcompare c11 c12 <> kcompare c21 c22
+  compareHF Branch{} _ = LT
+
+  compareHF While{} Assign{} = GT
+  compareHF While{} Branch{} = GT
+  compareHF (While cond1 c1) (While cond2 c2) =
+    kcompare cond1 cond2 <> kcompare c1 c2
 
 type FuzziF = ArithF :+: CompareF :+: ExprF
               :+: PrivMechF :+: EffF :+: XLambdaF
@@ -153,8 +203,8 @@ type NFuzziF = ArithF :+: CompareF :+: ExprF
 --type NFuzzi f = Context NFuzziF f
 
 assign :: forall a.
-          HasCallStack
-       => Term (WithPos FuzziF) (FuzziM a)
+          (HasCallStack, Typeable a)
+       => Variable a
        -> Term (WithPos FuzziF) (FuzziM a)
        -> EmMon (Term (WithPos FuzziF)) FuzziM ()
 assign lhs rhs =
@@ -191,8 +241,8 @@ infixl 9 .!!
 
 infix 4 .=
 (.=) :: forall a.
-        HasCallStack
-     => Term (WithPos FuzziF) (FuzziM a)
+        (HasCallStack, Typeable a)
+     => Variable a
      -> Term (WithPos FuzziF) (FuzziM a)
      -> EmMon (Term (WithPos FuzziF)) FuzziM ()
 (.=) = assign
@@ -292,6 +342,8 @@ instance
     Compose . return $ iADeref pos var
   hoasToNamedAlg (Index e idx :&: pos) =
     Compose $ iAIndex pos <$> getCompose e <*> getCompose idx
+  hoasToNamedAlg (Resize e len :&: pos) =
+    Compose $ iAResize pos <$> getCompose e <*> getCompose len
   hoasToNamedAlg (ArrLit es :&: pos) =
     Compose $ iAArrLit pos <$> traverse getCompose es
 
@@ -341,7 +393,7 @@ instance HOASToNamed EffF NFuzziF where
 instance
   nfuzziPos ~ WithPos NFuzziF => HOASToNamed (EffF :&: Pos) nfuzziPos where
   hoasToNamedAlg (Assign lhs rhs :&: pos) =
-    Compose $ iAAssign pos <$> getCompose lhs <*> getCompose rhs
+    Compose $ iAAssign pos <$> pure lhs <*> getCompose rhs
   hoasToNamedAlg (Branch cond t f :&: pos) =
     Compose $ iABranch pos <$> getCompose cond <*> getCompose t <*> getCompose f
   hoasToNamedAlg (While cond body :&: pos) =

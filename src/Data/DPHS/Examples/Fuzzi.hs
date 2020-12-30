@@ -23,8 +23,8 @@ xx = v x
 
 ex1 :: EmMon (Term (WithPos FuzziF)) FuzziM ()
 ex1 = do
-  v @Double (V "x") .= laplace 1.0 xx
-  v @Double (V "x") .= laplace xx 0.0
+  V "x" .= laplace 1.0 xx
+  V "x" .= laplace xx 0.0
 
 deepEx1 :: Term (WithPos FuzziF) (FuzziM ())
 deepEx1 = toDeepRepr' ex1
