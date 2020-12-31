@@ -4,6 +4,7 @@ module Data.DPHS.Typecheck.Fuzzi where
 import Control.Monad
 import Control.Monad.Catch
 import qualified Data.Map.Strict as M
+import qualified Data.Map.Merge.Strict as M
 
 import Data.Comp.Multi.Algebra
 import Data.Comp.Multi.Annotation
@@ -41,6 +42,10 @@ data Sensitivity =
   Const Double
   | Sens Double
   deriving (Show, Eq, Ord)
+
+asSens :: Sensitivity -> Sensitivity
+asSens (Const _) = Sens 0
+asSens s = s
 
 type Cxt = M.Map Name Sensitivity
 
@@ -105,10 +110,20 @@ type TypeChecker m = Cxt -> m (InternalTypeInfo m)
 class TyAlg (h :: (* -> *) -> * -> *) where
   tyAlg :: MonadThrow m => Alg h (K (TypeChecker m))
 
+liftSum ''TyAlg
+
+instance TyAlg (EffF :&: Pos) where
+  tyAlg = tyAlgEff
+
 data TypeError =
   ExpectingAnExpression
   | BranchConditionProb
   | BranchConditionSensitive
+  | CannotFindLoopInvariant
+  | ExpectingLoopBodyCommand
+  | ExpectingTrueBranchCommand
+  | ExpectingFalseBranchCommand
+  | LoopHasPrivacyCost Double Double
   deriving (Show, Eq, Ord)
 
 data PositionAndTypeError = PTE {
@@ -121,6 +136,12 @@ instance Exception PositionAndTypeError
 throwTE :: MonadThrow m => Pos -> TypeError -> m a
 throwTE p e = throwM (PTE p e)
 
+mergeBranchCxt :: Cxt -> Cxt -> Cxt
+mergeBranchCxt =
+  M.merge M.dropMissing M.dropMissing merge
+  where merge = M.zipWithAMatched (\_ s1 s2 -> pure $ max s1 s2)
+
+-- |Typecheck the commands fragment.
 tyAlgEff :: MonadThrow m => Alg (EffF :&: Pos) (K (TypeChecker m))
 tyAlgEff (Assign (V x) rhs :&: position) = K $ \cxt -> do
   tyRhs <- unK rhs cxt
@@ -132,17 +153,42 @@ tyAlgEff (Assign (V x) rhs :&: position) = K $ \cxt -> do
 tyAlgEff (Branch cond c1 c2 :&: position) = K $ \cxt -> do
   tyCond <- unK cond cxt
   case asExprInfo tyCond of
-    Just (Sens 0, D, t, 0) -> do
+    Just (asSens -> Sens 0, D, t, 0) -> do
       tyC1 <- unK c1 cxt
       tyC2 <- unK c2 cxt
       case (asCmdInfo tyC1, asCmdInfo tyC2) of
-        (Just _, Just _) ->
-          return undefined
-        _ -> undefined
+        (Just (postCxt1, p1, t1, eps1, dlt1), Just (postCxt2, p2, t2, eps2, dlt2)) ->
+          let cxt' = mergeBranchCxt postCxt1 postCxt2 in
+          return $
+            atomicCmdInfo cxt'
+              (p1 <> p2)
+              (t <> t1 <> t2)
+              (max eps1 eps2)
+              (max dlt1 dlt2)
+        (Just _, Nothing) -> throwTE position ExpectingFalseBranchCommand
+        (Nothing, _) -> throwTE position ExpectingTrueBranchCommand
+    Just (_, P, _, _) ->
+      throwTE position BranchConditionProb
+    Just (_, D, _, _) ->
+      throwTE position BranchConditionSensitive
     Nothing -> throwTE position ExpectingAnExpression
-    Just (Sens _, _, _, _) ->
+tyAlgEff (While cond c :&: position) = K $ \cxt -> do
+  tyCond <- unK cond cxt
+  case asExprInfo tyCond of
+    Just (asSens -> Sens 0, D, tCond, _) -> do
+      tyC <- unK c cxt
+      case asCmdInfo tyC of
+        Just (postCxt, p, tBody, 0, 0) -> do
+          when (cxt /= postCxt) $
+            throwTE position CannotFindLoopInvariant
+          return $ atomicCmdInfo cxt p (tCond <> tBody) 0 0
+        Just (_, _, _, eps, delta) ->
+          throwTE position (LoopHasPrivacyCost eps delta)
+        Nothing ->
+          throwTE position ExpectingLoopBodyCommand
+    Just (_, D, _, _) ->
       throwTE position BranchConditionSensitive
     Just (_, P, _, _) ->
       throwTE position BranchConditionProb
-
-liftSum ''TyAlg
+    Nothing ->
+      throwTE position ExpectingAnExpression
