@@ -182,3 +182,5 @@ mergeBranchCxt p =
   let missingHelper = M.traverseMaybeMissing (whenMissing p)
       matchHelper = M.zipWithAMatched (whenMatching p)
   in M.mergeA missingHelper missingHelper matchHelper
+
+-- For typechecking monadic commands, use the fact that monad bound names are globally unique, and pass them through the intermediate typing contexts as internal type info. However, these names should be used linearly, and once an intermediate has been consumed, remove it from the context.
