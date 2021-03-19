@@ -1,6 +1,7 @@
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 module Data.DPHS.Typecheck.Fuzzi where
 
+import Data.Semigroup
 import Control.Monad
 import Control.Monad.Catch
 import qualified Data.Map.Strict as M
@@ -46,6 +47,24 @@ data Sensitivity =
 asSens :: Sensitivity -> Sensitivity
 asSens (Const _) = Sens 0
 asSens s = s
+
+isSubSens :: Sensitivity -> Sensitivity -> Bool
+isSubSens (Const _) (Sens _)  = True
+isSubSens (Const a) (Const b) = a == b
+isSubSens (Sens a)  (Sens b) = a <= b
+isSubSens (Sens _)  (Const _) = False
+
+isNonSensitive :: Sensitivity -> Bool
+isNonSensitive s = s `isSubSens` (Sens 0)
+
+instance Semigroup Sensitivity where
+  (Sens a) <> (Sens b) = Sens (a + b)
+  (Sens a) <> (Const _) = Sens a
+  (Const _) <> (Sens b) = Sens b
+  (Const _) <> (Const _) = Sens 0
+
+instance Monoid Sensitivity where
+  mempty = Sens 0
 
 type Cxt = M.Map Name Sensitivity
 
@@ -124,6 +143,9 @@ data TypeError =
   | ExpectingTrueBranchCommand
   | ExpectingFalseBranchCommand
   | LoopHasPrivacyCost Double Double
+  | OutOfScopeVariable Name
+  | SensitiveArrayIndex
+  | SensitiveArraySize
   deriving (Show, Eq, Ord)
 
 data PositionAndTypeError = PTE {
@@ -175,7 +197,7 @@ tyAlgEff (Branch cond c1 c2 :&: position) = K $ \cxt -> do
 tyAlgEff (While cond c :&: position) = K $ \cxt -> do
   tyCond <- unK cond cxt
   case asExprInfo tyCond of
-    Just (asSens -> Sens 0, D, tCond, _) -> do
+    Just (isNonSensitive -> True, D, tCond, _) -> do
       tyC <- unK c cxt
       case asCmdInfo tyC of
         Just (postCxt, p, tBody, 0, 0) -> do
@@ -192,3 +214,44 @@ tyAlgEff (While cond c :&: position) = K $ \cxt -> do
       throwTE position BranchConditionProb
     Nothing ->
       throwTE position ExpectingAnExpression
+
+tyAlgExpr :: MonadThrow m => Alg (ExprF :&: Pos) (K (TypeChecker m))
+tyAlgExpr (Deref (V x) :&: position) = K $ \cxt -> do
+  case M.lookup x cxt of
+    Nothing -> throwTE position (OutOfScopeVariable x)
+    Just ty -> (return . Atomic) (ExprInfo ty D T 0)
+tyAlgExpr (Index checkArr checkIdx :&: position) = K $ \cxt -> do
+  arrTy <- unK checkArr cxt
+  idxTy <- unK checkIdx cxt
+  case ( asExprInfo arrTy
+       , asExprInfo idxTy) of
+    ( Just (arrSens, arrProb, arrTerm, eps1)
+      , Just (idxSens, idxProb, idxTerm, eps2)) -> do
+      when (not $ isNonSensitive idxSens) $
+        throwTE position SensitiveArrayIndex
+      return . Atomic $
+        ExprInfo arrSens (arrProb <> idxProb) (arrTerm <> idxTerm) (eps1+eps2)
+    _ -> throwTE position ExpectingAnExpression
+tyAlgExpr (Resize checkArr checkSize :&: position) = K $ \cxt -> do
+  arrTy <- unK checkArr cxt
+  sizeTy <- unK checkSize cxt
+  case ( asExprInfo arrTy
+       , asExprInfo sizeTy) of
+    ( Just (arrSens, arrProb, arrTerm, eps1)
+      , Just (sizeSens, sizeProb, sizeTerm, eps2)) -> do
+      when (not $ isNonSensitive sizeSens) $
+        throwTE position SensitiveArraySize
+      return . Atomic $
+        ExprInfo arrSens (arrProb <> sizeProb) (arrTerm <> sizeTerm) (eps1+eps2)
+    _ -> throwTE position ExpectingAnExpression
+tyAlgExpr (ArrLit checkInners :&: position) = K $ \cxt -> do
+  innerTys <- mapM (\checkTy -> unK checkTy cxt) checkInners
+  case traverse asExprInfo innerTys of
+    Just innerExprTys ->
+      let totalSens = foldMap (\einfo -> einfo ^. _1) innerExprTys
+          aggrProbAnn = foldMap (\einfo -> einfo ^. _2) innerExprTys
+          aggrTermAnn = foldMap (\einfo -> einfo ^. _3) innerExprTys
+          totalEps = getSum $ foldMap (\einfo -> Sum (einfo ^. _4)) innerExprTys
+      in return . Atomic $
+           ExprInfo totalSens aggrProbAnn aggrTermAnn totalEps
+    Nothing -> throwTE position ExpectingAnExpression
