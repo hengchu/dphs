@@ -101,6 +101,7 @@ liftSum ''TyAlg
 
 data TypeError =
   ExpectingAnExpression
+  | ExpectingACommand
   | BranchConditionProb
   | BranchConditionSensitive
   | CannotFindLoopInvariant
@@ -139,14 +140,18 @@ expectMacro pos _         = throwTE pos ExpectingNestedChecker
 
 -- For typechecking monadic commands, use the fact that monad bound names are globally unique, and pass them through the intermediate typing contexts as internal type info. However, these names should be used linearly, and once an intermediate has been consumed, remove it from the context.
 
-tyMonadF :: MonadThrow m => Alg (MonadF :&: Pos) (TypeChecker m)
-tyMonadF (Bind m k :&: pos) = TypeChecker $ \cxt -> do
-  mTi <- runTypeChecker m cxt 
-  kTyCheck <- runTypeChecker k cxt >>= expectMacro pos
-  kTyCheck mTi
-tyMonadF (Ret e :&: _p) = TypeChecker $ \cxt -> do
-  runTypeChecker e cxt
-
+tyMonadF :: MonadThrow m => Alg (SeqF :&: Pos) (TypeChecker m)
+tyMonadF (Seq a b :&: pos) = TypeChecker $ \cxt -> do
+  aTi <- runTypeChecker a cxt >>= expectAtomic pos
+  case aTi of
+    CmdInfo cxt' p t e d -> do
+      bTi <- runTypeChecker b cxt' >>= expectAtomic pos
+      (return . Atomic) (bTi & #probAnn %~ (<> p)
+                         & #termAnn %~ (<> t)
+                         & #epsilon %~ (+ e)
+                         & #delta %~ (+ d))
+    ExprInfo{} -> throwTE pos ExpectingACommand
+      
 tyExprF :: MonadThrow m => Alg (ExprF :&: Pos) (TypeChecker m)
 tyExprF (Deref (V x) :&: p) = TypeChecker $ \cxt -> do
   case M.lookup x cxt of
@@ -202,4 +207,11 @@ tyLambdaF (Lam (V x) body :&: _pos) = TypeChecker $ \cxt -> do
   (return . Macro) $ \xTy -> do
     let cxt' = M.insert x xTy cxt
     runTypeChecker body cxt'
-tyLambdaF (App f arg :&: pos) = undefined
+tyLambdaF (App f arg :&: pos) = TypeChecker $ \cxt -> do
+  fTi <- runTypeChecker f cxt >>= expectMacro pos
+  argTi <- runTypeChecker arg cxt
+  fTi argTi
+tyLambdaF (Var (V x) :&: pos) = TypeChecker $ \cxt -> do
+  case M.lookup x cxt of
+    Nothing -> throwTE pos (OutOfScopeVariable x)
+    Just t -> return t
