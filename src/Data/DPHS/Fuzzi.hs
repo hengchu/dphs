@@ -129,7 +129,7 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
 
 data PrivMechF :: (* -> *) -> * -> * where
   Laplace :: r (FuzziM Double)
-          -> r (FuzziM Double)
+          -> Double
           -> PrivMechF r (FuzziM Double)
 
 $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
@@ -249,7 +249,7 @@ infix 4 .=
 
 laplace :: HasCallStack
         => Term (WithPos FuzziF) (FuzziM Double)
-        -> Term (WithPos FuzziF) (FuzziM Double)
+        -> Double 
         -> Term (WithPos FuzziF) (FuzziM Double)
 laplace width center = iALaplace (fromCallStack callStack) width center
 
@@ -378,7 +378,7 @@ instance HOASToNamed PrivMechF NFuzziF where
 instance
   nfuzziPos ~ WithPos NFuzziF => HOASToNamed (PrivMechF :&: Pos) nfuzziPos where
   hoasToNamedAlg (Laplace width center :&: pos) =
-    Compose $ iALaplace pos <$> getCompose width <*> getCompose center
+    Compose $ iALaplace pos <$> getCompose width <*> pure center
 
 {-
 instance HOASToNamed EffF NFuzziF where
