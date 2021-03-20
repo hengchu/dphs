@@ -4,7 +4,6 @@ module Data.DPHS.Typecheck.Fuzzi where
 import Control.Monad
 import Control.Monad.Catch
 import Data.Semigroup
-import Type.Reflection
 import qualified Data.Map.Merge.Strict as M
 import qualified Data.Map.Strict as M
 
@@ -114,7 +113,6 @@ data TypeError =
   | SensitiveArraySize
   | DivergedTypeInfo Name
   | MergingMacroTypeInfo Name
-  | ExpectingType SomeTypeRep SomeTypeRep -- expected, actual
   | ExpectingNestedChecker
   | NotExpectingNestedChecker
   | ExpectingDeterminism
@@ -142,9 +140,9 @@ expectMacro pos _         = throwTE pos ExpectingNestedChecker
 -- For typechecking monadic commands, use the fact that monad bound names are globally unique, and pass them through the intermediate typing contexts as internal type info. However, these names should be used linearly, and once an intermediate has been consumed, remove it from the context.
 
 tyMonadF :: MonadThrow m => Alg (MonadF :&: Pos) (TypeChecker m)
-tyMonadF (Bind m k :&: p) = TypeChecker $ \cxt -> do
-  mTi <- runTypeChecker m cxt
-  kTyCheck <- runTypeChecker k cxt >>= expectMacro p
+tyMonadF (Bind m k :&: pos) = TypeChecker $ \cxt -> do
+  mTi <- runTypeChecker m cxt 
+  kTyCheck <- runTypeChecker k cxt >>= expectMacro pos
   kTyCheck mTi
 tyMonadF (Ret e :&: _p) = TypeChecker $ \cxt -> do
   runTypeChecker e cxt
@@ -199,4 +197,9 @@ tyPrivMechF (Laplace center width :&: pos) = TypeChecker $ \cxt -> do
       return (Atomic (ExprInfo (Sens 0) P t (e+e')))
     _ -> throwTE pos ExpectingAnExpression
 
-
+tyLambdaF :: MonadThrow m => Alg (LambdaF :&: Pos) (TypeChecker m)
+tyLambdaF (Lam (V x) body :&: _pos) = TypeChecker $ \cxt -> do
+  (return . Macro) $ \xTy -> do
+    let cxt' = M.insert x xTy cxt
+    runTypeChecker body cxt'
+tyLambdaF (App f arg :&: pos) = undefined
