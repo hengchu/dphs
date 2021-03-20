@@ -191,8 +191,8 @@ instance {-# OVERLAPPING #-}
 
 -- |Embedded monadic syntax.
 data MonadF :: (* -> *) -> * -> * where
-  Bind :: (Monad m, Typeable a) => r (m a) -> r (a -> m b) -> MonadF r (m b)
-  Ret  :: Monad m => r a -> MonadF r (m a)
+  Bind :: (Monad m, Typeable m, Typeable a, Typeable b) => r (m a) -> r (a -> m b) -> MonadF r (m b)
+  Ret  :: (Monad m, Typeable m) => r a -> MonadF r (m a)
 
 $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
           makeShowHF, makeEqHF, makeOrdHF,
@@ -217,7 +217,7 @@ instance
     Compose $ iABind pos <$> getCompose ma <*> getCompose kont
   hoasToNamedAlg (Ret a :&: pos) =
     Compose $ iARet pos <$> getCompose a
-
+  
 instance Syntactic (Cxt hole lang f) (Cxt hole lang f a) where
   type DeepRepr (Cxt hole lang f a) = a
   toDeepRepr = id
@@ -260,8 +260,8 @@ instance
 
 -- |Embedded lambda calculus.
 data XLambdaF :: (* -> *) -> * -> * where
-  XLam :: Typeable a => (r a -> r b) -> XLambdaF r (a -> b)
-  XApp :: Typeable a => r (a -> b) -> r a -> XLambdaF r b
+  XLam :: (Typeable a, Typeable b) => (r a -> r b) -> XLambdaF r (a -> b)
+  XApp :: (Typeable a, Typeable b) => r (a -> b) -> r a -> XLambdaF r b
   XVar :: Typeable a => Variable a -> XLambdaF r a
 
 instance HXFunctor XLambdaF where
@@ -295,8 +295,8 @@ instance
 
 -- |Named lambda calculus representation.
 data LambdaF :: (* -> *) -> * -> * where
-  Lam :: Typeable a => Variable a -> r b -> LambdaF r (a -> b)
-  App :: Typeable a => r (a -> b) -> r a -> LambdaF r b
+  Lam :: (Typeable a, Typeable b) => Variable a -> r b -> LambdaF r (a -> b)
+  App :: (Typeable a, Typeable b) => r (a -> b) -> r a -> LambdaF r b
   Var :: Typeable a => Variable a -> LambdaF r a
 
 instance EqHF LambdaF where
@@ -487,3 +487,60 @@ instance SynOrd Integer where
   (.<=) = (<=)
   (.>)  = (>)
   (.>=) = (>=)
+
+data Progress a = Done a | Worked a
+
+unprogress :: Progress a -> a
+unprogress (Done a) = a
+unprogress (Worked a) = a
+
+removeBindRetImpl ::
+  forall h a.
+  ( MonadF :&: Pos :<: h
+  , LambdaF :&: Pos :<: h
+  ) =>
+  h (Term h) a -> Progress (h (Term h) a)
+removeBindRetImpl term@(proj @(MonadF :&: Pos) -> Just (Bind m (f :: _ (x -> my)) :&: _)) =
+  case proj @(LambdaF :&: Pos) (unTerm f) of
+    Just (Lam ((V x) :: _ xx) body :&: _) ->
+      case proj @(MonadF :&: Pos) (unTerm body) of
+        Just (Ret r :&: _) ->
+          case proj @(LambdaF :&: Pos) (unTerm r) of
+            Just (Var ((V x') :: _ xx') :&: _) ->
+              case eqTypeRep (typeRep @xx) (typeRep @xx') of
+                Just HRefl -> if x == x' then Worked (unTerm m) else Done term
+                _ -> Done term
+            _ -> Done term
+        _ -> Done term
+    _ -> Done term
+removeBindRetImpl term = Done term
+
+removeBindRet :: forall h a.
+  ( HFunctor h
+  , MonadF :&: Pos :<: h
+  , LambdaF :&: Pos :<: h
+  ) => h (Compose Progress (Term h)) a -> Compose Progress (Term h) a
+removeBindRet term =
+  case removeBindRetImpl . hfmap (unprogress . getCompose) $ term of
+    Worked t -> Compose . Worked . Term $ t
+    Done t -> Compose . Done . Term $ t
+
+removeBindRetStep :: forall h a.
+  ( HFunctor h
+  , MonadF :&: Pos :<: h
+  , LambdaF :&: Pos :<: h
+  ) => Term h a -> Progress (Term h a)
+removeBindRetStep = getCompose . cata removeBindRet
+
+removeAllBindRet :: forall h a.
+  ( HFunctor h
+  , MonadF :&: Pos :<: h
+  , LambdaF :&: Pos :<: h
+  ) => Term h a -> Term h a
+removeAllBindRet = untilConvergence removeBindRetStep
+  
+untilConvergence :: (a -> Progress a) -> (a -> a)
+untilConvergence f a =
+  case f a of
+    Worked a -> untilConvergence f a
+    Done a -> a

@@ -5,8 +5,6 @@ import Data.Functor.Compose
 import Type.Reflection
 
 import Data.Comp.Multi.Term
-import Data.Comp.Multi.Algebra
-import Data.Comp.Multi.Annotation
 
 import Data.DPHS.SrcLoc
 import Data.DPHS.HXFunctor
@@ -23,8 +21,8 @@ xx = v x
 
 ex1 :: EmMon (Term (WithPos FuzziF)) FuzziM ()
 ex1 = do
-  V "x" .= laplace xx 1.0 
-  V "x" .= laplace xx 0.0
+  x .= laplace xx 1.0 
+  x .= laplace xx 2.0
 
 deepEx1 :: Term (WithPos FuzziF) (FuzziM ())
 deepEx1 = toDeepRepr' ex1

@@ -30,6 +30,8 @@ dependencies:
 
 ghc-options:
 - -Wall
+- -Wno-partial-type-signatures
+- -Wno-name-shadowing
 - -fwarn-tabs
 - -fwarn-incomplete-uni-patterns
 - -fwarn-incomplete-record-updates

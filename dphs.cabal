@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 73631c35209053f077f19956663205fba11493996618df3454a773c9594bfe83
+-- hash: e930eb518609f69466259bad4454a1a0f26bc32106ac2214c4b9008825b4e755
 
 name:           dphs
 version:        0.1.0.0
@@ -28,6 +28,7 @@ source-repository head
 library
   exposed-modules:
       Data.DPHS.Algebra
+      Data.DPHS.Error
       Data.DPHS.Examples.Fuzzi
       Data.DPHS.Fuzzi
       Data.DPHS.HXFunctor
@@ -43,7 +44,7 @@ library
   hs-source-dirs:
       src
   default-extensions: DataKinds DeriveGeneric DuplicateRecordFields FlexibleContexts TypeApplications DeriveFunctor DeriveFoldable DeriveTraversable TypeOperators ApplicativeDo LambdaCase GeneralizedNewtypeDeriving TypeFamilies ScopedTypeVariables RankNTypes FlexibleInstances DeriveDataTypeable QuasiQuotes TemplateHaskell ConstraintKinds UndecidableInstances MultiParamTypeClasses KindSignatures FunctionalDependencies DataKinds GADTs StandaloneDeriving ViewPatterns CPP PartialTypeSignatures PolyKinds QuantifiedConstraints DerivingVia BangPatterns PatternSynonyms DuplicateRecordFields OverloadedLabels LambdaCase TypeFamilyDependencies OverloadedStrings
-  ghc-options: -Wall -fwarn-tabs -fwarn-incomplete-uni-patterns -fwarn-incomplete-record-updates -optP-Wno-nonportable-include-path
+  ghc-options: -Wall -Wno-partial-type-signatures -Wno-name-shadowing -fwarn-tabs -fwarn-incomplete-uni-patterns -fwarn-incomplete-record-updates -optP-Wno-nonportable-include-path
   build-depends:
       base >=4.8 && <5
     , compdata >=0.12 && <1.0
@@ -60,7 +61,7 @@ executable dphs-exe
       Paths_dphs
   hs-source-dirs:
       app
-  ghc-options: -Wall -fwarn-tabs -fwarn-incomplete-uni-patterns -fwarn-incomplete-record-updates -optP-Wno-nonportable-include-path -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wno-partial-type-signatures -Wno-name-shadowing -fwarn-tabs -fwarn-incomplete-uni-patterns -fwarn-incomplete-record-updates -optP-Wno-nonportable-include-path -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.8 && <5
     , compdata >=0.12 && <1.0
@@ -79,7 +80,7 @@ test-suite dphs-test
       Paths_dphs
   hs-source-dirs:
       test
-  ghc-options: -Wall -fwarn-tabs -fwarn-incomplete-uni-patterns -fwarn-incomplete-record-updates -optP-Wno-nonportable-include-path -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wno-partial-type-signatures -Wno-name-shadowing -fwarn-tabs -fwarn-incomplete-uni-patterns -fwarn-incomplete-record-updates -optP-Wno-nonportable-include-path -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.8 && <5
     , compdata >=0.12 && <1.0

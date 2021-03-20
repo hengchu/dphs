@@ -4,7 +4,8 @@ module Data.DPHS.Fuzzi where
 
 import Data.Functor.Compose
 import Control.Monad
-import Type.Reflection
+import Control.Monad.Catch
+import Type.Reflection hiding (App)
 import Data.List
 import GHC.Stack
 
@@ -14,9 +15,11 @@ import Data.DPHS.Syntax
 import Data.DPHS.Syntactic
 import Data.DPHS.Types
 import Data.DPHS.SrcLoc
+import Data.DPHS.Error
 
 import Text.Printf
 import Data.Comp.Multi
+import Data.Comp.Multi.Desugar
 import Data.Comp.Multi.Show ()
 import Data.Comp.Multi.Equality ()
 import Data.Comp.Multi.Ordering (KOrd(..))
@@ -190,6 +193,38 @@ instance OrdHF EffF where
   compareHF (While cond1 c1) (While cond2 c2) =
     kcompare cond1 cond2 <> kcompare c1 c2
 
+data SeqF :: (* -> *) -> * -> * where
+  Seq  :: Monad m => r (m ()) -> r (m b) -> SeqF r (m b)
+
+$(derive [makeHFunctor, makeHFoldable, makeHTraversable,
+          makeShowHF, makeEqHF, makeOrdHF,
+          smartConstructors, smartAConstructors]
+         [''SeqF])
+
+instance
+  ( SeqF :<: tgt
+  , SeqF :&: Pos :<: tgtPos
+  , tgtPos ~ WithPos tgt
+  , DistAnn tgt Pos tgtPos
+  ) => HOASToNamed (SeqF :&: Pos) tgtPos where
+  hoasToNamedAlg (Seq a b :&: pos) =
+    Compose $ iASeq pos <$> getCompose a <*> getCompose b
+
+data Class =
+  M    -- ^ used as a macro
+  | B  -- ^ used in bound
+  deriving (Show, Eq, Ord)
+
+data CLambdaF :: (* -> *) -> * -> * where
+  CLam :: (Typeable a, Typeable b) => Class -> Variable a -> r b -> CLambdaF r (a -> b)
+  CApp :: (Typeable a, Typeable b) => r (a -> b) -> r a -> CLambdaF r b
+  CVar :: Typeable a => Variable a -> CLambdaF r a
+  
+$(derive [makeHFunctor, makeHFoldable, makeHTraversable,
+          makeShowHF, --makeEqHF, makeOrdHF,
+          smartConstructors, smartAConstructors]
+         [''CLambdaF])
+
 type FuzziF = ArithF :+: CompareF :+: ExprF
               :+: PrivMechF :+: EffF :+: XLambdaF
               :+: MonadF
@@ -201,6 +236,21 @@ type NFuzziF = ArithF :+: CompareF :+: ExprF
               :+: MonadF
               :+: ExtensionF
 --type NFuzzi f = Context NFuzziF f
+
+type NCFuzziF = ArithF :+: CompareF :+: ExprF
+                :+: PrivMechF :+: EffF :+: CLambdaF
+                :+: MonadF
+                :+: ExtensionF
+
+type NSFuzziF = ArithF :+: CompareF :+: ExprF
+              :+: PrivMechF :+: EffF :+: CLambdaF
+              :+: SeqF
+              :+: ExtensionF
+
+type NSFuzziF1 = ArithF :+: CompareF :+: ExprF
+              :+: PrivMechF :+: EffF :+: LambdaF
+              :+: SeqF
+              :+: ExtensionF
 
 assign :: forall a.
           (HasCallStack, Typeable a)
@@ -398,3 +448,120 @@ instance
     Compose $ iABranch pos <$> getCompose cond <*> getCompose t <*> getCompose f
   hoasToNamedAlg (While cond body :&: pos) =
     Compose $ iAWhile pos <$> getCompose cond <*> getCompose body
+
+-- must convert from NFuzziF to NSFuzziF before typechecking
+-- use fold for this:
+-- to convert Bind a k into seq, we need to check:
+-- 1. a is m ()
+-- 2. k is () -> m ()
+-- 3. need to unwrap the binder in k
+--
+-- fold returns a sum type?
+-- 1. converted
+-- 2. unbound abstraction
+-- the types are implicitly carried by typerep
+
+data UnitAbstraction a where
+  UnitAbstraction :: Term (WithPos NSFuzziF) mb -> UnitAbstraction (() -> mb)
+
+data Simplified a =
+  Simplified {
+    code :: Term (WithPos NSFuzziF) a,
+    abstractionBody :: Maybe (UnitAbstraction a)
+  }
+
+class SimplMonad h where
+  simplMonadAlg :: MonadThrow m => AlgM m h Simplified
+
+newtype Classified a = Classified { getClassified :: Class -> Term (WithPos NCFuzziF) a }
+
+class ClassifyLam h where
+  classifyLamAlg :: Alg h Classified
+
+liftSum ''SimplMonad
+liftSum ''ClassifyLam
+
+data ClassifyLamError
+
+data SimplMonadError =
+  BoundNonUnit SomeTypeRep
+  | ReturnNonUnit SomeTypeRep
+  | ExpectConverted
+  | ExpectUnbound
+  | UnexpectedReturn
+  deriving (Show, Eq, Ord)
+
+instance Exception SimplMonadError
+
+instance {-# OVERLAPPING #-}
+  ClassifyLam (MonadF :&: Pos) where
+  classifyLamAlg (Bind a k :&: pos) =
+    Classified $ \outer -> iABind pos (getClassified a outer) (getClassified k B)
+  classifyLamAlg (Ret a :&: pos) =
+    Classified $ \outer -> iARet pos (getClassified a outer)
+
+instance {-# OVERLAPPING #-}
+  ClassifyLam (LambdaF :&: Pos) where
+  classifyLamAlg (Lam x body :&: pos) =
+    Classified $ \outer -> iACLam pos outer x (getClassified body outer)
+  classifyLamAlg (App f a :&: pos) =
+    Classified $ \outer -> iACApp pos (getClassified f outer) (getClassified a outer)
+  classifyLamAlg (Var x :&: pos) =
+    Classified $ \_outer -> iACVar pos x
+
+instance {-# OVERLAPPABLE #-}
+  (HFunctor h, h :<: WithPos NCFuzziF) =>
+  ClassifyLam h where
+  classifyLamAlg hterm =
+    -- just rely on hfmap to pass through
+    Classified $ \outer -> inject $ hfmap (\t -> getClassified t outer) hterm
+
+-- |Classify the abstractions in the source code into those used for
+-- macros (the default), and those used as continuations in a Bind.
+classifyLam :: Term (WithPos NFuzziF) i -> Term (WithPos NCFuzziF) i
+classifyLam t = getClassified (cata classifyLamAlg t) M
+
+instance {-# OVERLAPPING #-} SimplMonad (MonadF :&: Pos) where
+  simplMonadAlg (Bind (a :: _ mx) (k :: _ (x -> my)) :&: pos) =
+    case k of
+      Simplified _ (Just (UnitAbstraction kBody)) ->
+        return $ Simplified (iASeq pos (code a) kBody) undefined
+      Simplified _ Nothing ->
+        throwPos pos (BoundNonUnit (SomeTypeRep (typeRep @x)))
+  simplMonadAlg (Ret _a :&: pos) = throwPos pos UnexpectedReturn
+
+instance {-# OVERLAPPING #-} SimplMonad (CLambdaF :&: Pos) where
+  simplMonadAlg (CLam M x body :&: pos) =
+    return $ Simplified (iACLam pos M x (code body)) Nothing
+  simplMonadAlg (CLam B (x :: _ a) body :&: pos) =
+    case eqTypeRep (typeRep @a) (typeRep @()) of
+      Just HRefl ->
+        return $ Simplified (iACLam pos B x (code body)) (Just (UnitAbstraction (code body)))
+      Nothing -> throwPos pos (BoundNonUnit (SomeTypeRep (typeRep @a)))
+  simplMonadAlg (CApp f a :&: pos) =
+    return $ Simplified (iACApp pos (code f) (code a)) Nothing
+  simplMonadAlg (CVar x :&: pos) =
+    return $ Simplified (iACVar pos x) Nothing
+
+instance {-# OVERLAPPABLE #-}
+  (HFunctor h, h :<: WithPos NSFuzziF) =>
+  SimplMonad h where
+  simplMonadAlg hterm =
+    return $ Simplified (inject (hfmap code hterm)) Nothing
+
+-- Replace all "binds" in the source code for an imperative program with a sequence combinator.
+simplMonad :: MonadThrow m
+           => Term (WithPos NCFuzziF) i
+           -> m (Term (WithPos NSFuzziF) i)
+simplMonad = fmap code . cataM simplMonadAlg
+
+preprocess :: MonadThrow m => Term (WithPos NFuzziF) i -> m (Term (WithPos NSFuzziF1) i)
+preprocess = fmap removeLamClass . simplMonad . classifyLam . removeAllBindRet
+
+instance (HFunctor h, LambdaF :<: h) => Desugar CLambdaF h where 
+  desugHom' (CLam _ x body) = iLam x body
+  desugHom' (CApp f a) = iApp f a
+  desugHom' (CVar x) = iVar x
+
+removeLamClass :: Term (WithPos NSFuzziF) i -> Term (WithPos NSFuzziF1) i 
+removeLamClass = desugarA
