@@ -117,7 +117,9 @@ data TypeError =
   | NotExpectingNestedChecker
   | ExpectingDeterminism
   | ExpectingZeroEpsilon
+  | ExpectingZeroDelta
   | ExpectingZeroSensitivity
+  | ExpectingTermination
   deriving (Show, Eq, Ord)
 
 data PositionAndTypeError = PTE {
@@ -231,6 +233,13 @@ mergeContext pos = M.mergeA missingHelper missingHelper mergeHelper
             _ -> throwTE pos (MergingMacroTypeInfo x)
         mergeHelper = M.zipWithAMatched mergeVar
 
+isEquivalent :: Cxt m -> Cxt m -> Bool
+isEquivalent m1 m2 =
+  M.isSubmapOfBy isSubIType m1 m2 && M.isSubmapOfBy isSubIType m2 m1
+  where isSubIType (Atomic (ExprInfo s1 _ _ _)) (Atomic (ExprInfo s2 _ _ _)) = isSubSens s1 s2
+        isSubIType (Macro _)                    (Macro _) = True
+        isSubIType _                            _         = False
+
 tyEffF :: MonadThrow m => Alg (EffF :&: Pos) (TypeChecker m)
 tyEffF (Assign (V x) rhs :&: pos) = TypeChecker $ \cxt -> do
   rhsTi <- runTypeChecker rhs cxt >>= expectAtomic pos
@@ -259,3 +268,44 @@ tyEffF (Branch e c1 c2 :&: pos) = TypeChecker $ \cxt -> do
           (return . Atomic) (CmdInfo cxt' (p1 <> p2) (t <> t1 <> t2) (max eps1 eps2) (max dlt1 dlt2))
         _ -> throwTE pos ExpectingACommand
     CmdInfo{} -> throwTE pos ExpectingAnExpression
+tyEffF (While e c :&: pos) = TypeChecker $ \cxt -> do
+  eTi <- runTypeChecker e cxt >>= expectAtomic pos
+  cTi <- runTypeChecker c cxt >>= expectAtomic pos
+  case eTi of
+    ExprInfo s p _t eps -> do
+      when (not $ isNonSensitive s) $ throwTE pos ExpectingZeroSensitivity
+      when (p /= D) $ throwTE pos ExpectingDeterminism
+      when (eps /= 0) $ throwTE pos ExpectingZeroEpsilon
+      case cTi of
+        CmdInfo cxt' p _t eps dlt -> do
+          when (not $ isEquivalent cxt cxt') $ throwTE pos CannotFindLoopInvariant
+          when (p /= D) $ throwTE pos ExpectingDeterminism
+          when (eps /= 0) $ throwTE pos ExpectingZeroEpsilon
+          when (dlt /= 0) $ throwTE pos ExpectingZeroDelta
+          (return . Atomic) $ CmdInfo cxt' D C 0 0
+        _ -> throwTE pos ExpectingACommand
+    _ -> throwTE pos ExpectingAnExpression
+
+tyExtensionF :: (MonadThrow m, FreshM m)
+             => Alg (ExtensionF :&: Pos) (TypeChecker m)
+tyExtensionF (BMap x f :&: pos) = TypeChecker $ \cxt -> do
+  fChecker <- runTypeChecker f cxt >>= expectMacro pos
+  fOutTi0 <- fChecker (Atomic (ExprInfo (Sens 0) D T 0))
+  fOutTiInf <- fChecker (Atomic (ExprInfo (Sens inf) D T 0))
+  case (fOutTi0, fOutTiInf) of
+    ( Atomic (ExprInfo s0 p0 t0 eps0)
+      , Atomic (ExprInfo _sInf pInf tInf epsInf)
+      ) -> do
+      when (not $ isNonSensitive s0) $ throwTE pos ExpectingZeroSensitivity
+      when (p0 /= D || pInf /= D) $ throwTE pos ExpectingDeterminism
+      when (t0 /= T || tInf /= T) $ throwTE pos ExpectingTermination
+      when (eps0 /= 0 || epsInf /= 0) $ throwTE pos ExpectingZeroEpsilon
+      xTi <- runTypeChecker x cxt >>= expectAtomic pos
+      case xTi of
+        ExprInfo xSens _ _ _ ->
+          (return . Atomic) (ExprInfo xSens D T 0)
+        _ -> throwTE pos ExpectingAnExpression
+    _ -> throwTE pos ExpectingAnExpression    
+  where inf = 1/0
+tyExtensionF (BSum bound x :&: pos) = TypeChecker $ \cxt -> do
+  undefined
