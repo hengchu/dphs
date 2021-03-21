@@ -20,8 +20,9 @@ vx = V "x"
 vy = V "y"
 vz = V "z"
 
-vxs :: Typeable a => Variable a
+vxs, vys :: Typeable a => Variable a
 vxs = V "xs"
+vys = V "ys"
 
 vi :: Typeable a => Variable a
 vi = V "i"
@@ -34,6 +35,9 @@ z = v vz
 
 xs :: Term (WithPos FuzziF) (FuzziM (Array Double))
 xs = v vxs
+
+ys :: Term (WithPos FuzziF) (FuzziM (Bag Double))
+ys = v vys
 
 i :: Term (WithPos FuzziF) (FuzziM Int)
 i = v vi
@@ -66,6 +70,16 @@ ex3 = do
 
 namedEx3 :: FreshM m => m (Term (WithPos NFuzziF) (FuzziM ()))
 namedEx3 = toNamed ex3
+
+ex4 :: EmMon (Term (WithPos FuzziF)) FuzziM ()
+ex4 = do
+  vys .= bmap ys classify
+
+classify :: Term (WithPos FuzziF) (FuzziM Double) -> Term (WithPos FuzziF) (FuzziM Double)
+classify x = toDeepRepr' $ if_ (x .> 100) (fromDeepRepr' $ 1.0) (fromDeepRepr' $ -1.0)
+
+namedEx4 :: FreshM m => m (Term (WithPos NFuzziF) (FuzziM ()))
+namedEx4 = toNamed ex4
 
 toNamed :: (Typeable a, FreshM m) => EmMon (Term (WithPos FuzziF)) FuzziM a -> m (Term (WithPos NFuzziF) (FuzziM a))
 toNamed =

@@ -146,9 +146,9 @@ data EffF :: (* -> *) -> * -> * where
          -> r (FuzziM a)            -- ^ the rhs expression to assign to the lhs
          -> EffF r (FuzziM ())
   Branch :: r (FuzziM Bool)         -- ^ branch condition
-         -> r (FuzziM ())           -- ^ true branch statements
-         -> r (FuzziM ())           -- ^ false branch statements
-         -> EffF r (FuzziM ())
+         -> r (FuzziM a)           -- ^ true branch statements
+         -> r (FuzziM a)           -- ^ false branch statements
+         -> EffF r (FuzziM a)
   While  :: r (FuzziM Bool)         -- ^ loop condition
          -> r (FuzziM ())           -- ^ loop body
          -> EffF r (FuzziM ())
@@ -267,11 +267,11 @@ while :: HasCallStack
 while cond body =
   fromDeepRepr' $ iAWhile (fromCallStack callStack) cond (toDeepRepr' body)
 
-if_ :: HasCallStack
+if_ :: (HasCallStack, Typeable a)
     => Term (WithPos FuzziF) (FuzziM Bool)
-    -> EmMon (Term (WithPos FuzziF)) FuzziM ()
-    -> EmMon (Term (WithPos FuzziF)) FuzziM ()
-    -> EmMon (Term (WithPos FuzziF)) FuzziM ()
+    -> EmMon (Term (WithPos FuzziF)) FuzziM a
+    -> EmMon (Term (WithPos FuzziF)) FuzziM a
+    -> EmMon (Term (WithPos FuzziF)) FuzziM a
 if_ cond ct cf =
   fromDeepRepr' $ iABranch (fromCallStack callStack) cond (toDeepRepr' ct) (toDeepRepr' cf)
 

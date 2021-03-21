@@ -297,14 +297,24 @@ tyEffF (Branch e c1 c2 :&: pos) = TypeChecker $ \cxt -> do
   case eTi of
     ExprInfo s p t eps -> do
       when (p /= D) $ throwTE pos ExpectingDeterminism
-      when (not $ isNonSensitive s) $ throwTE pos BranchConditionSensitive
       when (eps /= 0) $ throwTE pos ExpectingZeroEpsilon
-      case (c1Ti, c2Ti) of
-        (CmdInfo cxt1 p1 t1 eps1 dlt1, CmdInfo cxt2 p2 t2 eps2 dlt2) -> do
-          cxt' <- mergeContext pos cxt1 cxt2
-          (return . Atomic) (CmdInfo cxt' (p1 <> p2) (t <> t1 <> t2) (max eps1 eps2) (max dlt1 dlt2))
-        _ -> throwTE pos ExpectingACommand
+      if isNonSensitive s
+      then do
+        case (c1Ti, c2Ti) of
+          (CmdInfo cxt1 p1 t1 eps1 dlt1, CmdInfo cxt2 p2 t2 eps2 dlt2) -> do
+            cxt' <- mergeContext pos cxt1 cxt2
+            (return . Atomic) (CmdInfo cxt' (p1 <> p2) (t <> t1 <> t2) (max eps1 eps2) (max dlt1 dlt2))
+          _ -> throwTE pos ExpectingACommand
+      else do
+        case (c1Ti, c2Ti) of
+          (ExprInfo _ p1 t1 eps1, ExprInfo _ p2 t2 eps2) -> do
+            when (p1 /= D || p2 /= D) $ throwTE pos ExpectingDeterminism
+            when (t1 /= T || t2 /= T) $ throwTE pos ExpectingTermination
+            when (eps1 /= 0 || eps2 /= 0) $ throwTE pos ExpectingZeroEpsilon
+            (return . Atomic) (ExprInfo (Sens inf) D t 0)
+          _ -> throwTE pos ExpectingAnExpression
     CmdInfo{} -> throwTE pos ExpectingAnExpression
+  where inf = 1/0
 tyEffF (While e c :&: pos) = TypeChecker $ \cxt -> do
   eTi <- runTypeChecker e cxt >>= expectAtomic pos
   cTi <- runTypeChecker c cxt >>= expectAtomic pos
