@@ -119,9 +119,9 @@ data ExtensionF :: (* -> *) -> * -> * where
        -> r (FuzziM (Bag a))
        -> r (FuzziM a -> FuzziM Int)
        -> ExtensionF r (FuzziM (Array (Bag a)))
-
-  AdvComp :: Variable Int  -- ^ iteration variable
-          -> Int           -- ^ total number of iterations
+       
+  AdvComp :: Int           -- ^ total number of iterations
+          -> Double        -- ^ omega
           -> r (FuzziM ()) -- ^ loop body
           -> ExtensionF r (FuzziM ())
 
@@ -318,12 +318,12 @@ amap :: forall a b.
 amap input f = iAAMap (fromCallStack callStack) input (toDeepRepr' f)
 
 ac :: HasCallStack
-   => Variable Int
-   -> Int
+   => Int
+   -> Double
    -> EmMon (Term (WithPos FuzziF)) FuzziM ()
    -> EmMon (Term (WithPos FuzziF)) FuzziM ()
-ac i n iter =
-  fromDeepRepr' $ iAAdvComp (fromCallStack callStack) i n (toDeepRepr' iter)
+ac n omega iter =
+  fromDeepRepr' $ iAAdvComp (fromCallStack callStack) n omega (toDeepRepr' iter)
 
 instance Num a => Num (FuzziM a) where
   (+) = liftM2 (+)

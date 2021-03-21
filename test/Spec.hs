@@ -6,6 +6,7 @@ import Data.Either
 import Control.Monad.State.Strict
 
 import Test.Hspec
+import Test.QuickCheck
 
 preprocessTests :: SpecWith (Arg Expectation)
 preprocessTests = describe "Data.DPHS.Fuzzi.preprocess" $ do
@@ -19,6 +20,11 @@ preprocessTests = describe "Data.DPHS.Fuzzi.preprocess" $ do
     print namedEx2'
     namedEx2' `shouldSatisfy` isRight
 
+sensitivityTests :: SpecWith (Arg Expectation)
+sensitivityTests = describe "Sensitivity Properties" $ do
+  return () 
+    
 main :: IO ()
 main = hspec $ do
   preprocessTests
+  sensitivityTests

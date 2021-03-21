@@ -105,6 +105,7 @@ tests:
     - dphs
     - hspec >= 2.7.4 && < 2.8
     - hspec-expectations >= 0.8.2 && < 0.9
+    - QuickCheck >= 2.13.2 && < 2.14
     default-extensions:
     - DataKinds
     - DeriveGeneric

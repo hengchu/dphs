@@ -6,6 +6,7 @@ import Type.Reflection
 
 import Data.Comp.Multi.Term
 
+import Data.DPHS.Types
 import Data.DPHS.SrcLoc
 import Data.DPHS.HXFunctor
 import Data.DPHS.Name
@@ -19,6 +20,9 @@ vx = V "x"
 vy = V "y"
 vz = V "z"
 
+vxs :: Typeable a => Variable a
+vxs = V "xs"
+
 vi :: Typeable a => Variable a
 vi = V "i"
 
@@ -28,6 +32,9 @@ x = v vx
 y = v vy
 z = v vz
 
+xs :: Term (WithPos FuzziF) (FuzziM (Array Double))
+xs = v vxs
+
 i :: Term (WithPos FuzziF) (FuzziM Int)
 i = v vi
 
@@ -36,11 +43,8 @@ ex1 = do
   vx .= laplace x 1.0 
   vx .= laplace x 2.0
 
-deepEx1 :: Term (WithPos FuzziF) (FuzziM ())
-deepEx1 = toDeepRepr' ex1
-
 namedEx1 :: FreshM m => m (Term (WithPos NFuzziF) (FuzziM ()))
-namedEx1 = getCompose $ hxcata (hoasToNamedAlg @(WithPos FuzziF)) (xtoCxt deepEx1)
+namedEx1 = toNamed ex1
 
 ex2 :: EmMon (Term (WithPos FuzziF)) FuzziM ()
 ex2 = do
@@ -53,11 +57,19 @@ ex2 = do
     vx .= w
     vi .= i + 1
 
-deepEx2 :: Term (WithPos FuzziF) (FuzziM ())
-deepEx2 = toDeepRepr' ex2
-
 namedEx2 :: FreshM m => m (Term (WithPos NFuzziF) (FuzziM ()))
-namedEx2 = getCompose $ hxcata (hoasToNamedAlg @(WithPos FuzziF)) (xtoCxt deepEx2)
+namedEx2 = toNamed ex2
+
+ex3 :: EmMon (Term (WithPos FuzziF)) FuzziM ()
+ex3 = do
+  vxs .= amap xs (\x -> 2 * x)
+
+namedEx3 :: FreshM m => m (Term (WithPos NFuzziF) (FuzziM ()))
+namedEx3 = toNamed ex3
+
+toNamed :: (Typeable a, FreshM m) => EmMon (Term (WithPos FuzziF)) FuzziM a -> m (Term (WithPos NFuzziF) (FuzziM a))
+toNamed =
+  getCompose . hxcata (hoasToNamedAlg @(WithPos FuzziF)) . xtoCxt . toDeepRepr'
 
 {-
 ex2 :: EmMon (Term FuzziF) FuzziM ()
