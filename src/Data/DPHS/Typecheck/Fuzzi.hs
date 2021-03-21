@@ -117,6 +117,7 @@ data TypeError =
   | NotExpectingNestedChecker
   | ExpectingDeterminism
   | ExpectingZeroEpsilon
+  | ExpectingZeroSensitivity
   deriving (Show, Eq, Ord)
 
 data PositionAndTypeError = PTE {
@@ -212,3 +213,49 @@ tyLambdaF (Var (V x) :&: pos) = TypeChecker $ \cxt -> do
   case M.lookup x cxt of
     Nothing -> throwTE pos (OutOfScopeVariable x)
     Just t -> return t
+
+mergeContext :: MonadThrow m => Pos -> Cxt m -> Cxt m -> m (Cxt m)
+mergeContext pos = M.mergeA missingHelper missingHelper mergeHelper
+  where missingHelper = M.traverseMissing (\v _ -> throwTE pos (OutOfScopeVariable v))
+        mergeVar x t1 t2 =
+          case (t1, t2) of
+            ( Atomic (ExprInfo s1 _ _ _)
+              , Atomic (ExprInfo s2 _ _ _)
+              ) -> return (Atomic (ExprInfo (s1 <> s2) D T 0))
+            ( Atomic (CmdInfo{})
+              , _
+              ) -> throwTE pos ExpectingAnExpression
+            ( _,
+              Atomic (CmdInfo{})
+              ) -> throwTE pos ExpectingAnExpression
+            _ -> throwTE pos (MergingMacroTypeInfo x)
+        mergeHelper = M.zipWithAMatched mergeVar
+
+tyEffF :: MonadThrow m => Alg (EffF :&: Pos) (TypeChecker m)
+tyEffF (Assign (V x) rhs :&: pos) = TypeChecker $ \cxt -> do
+  rhsTi <- runTypeChecker rhs cxt >>= expectAtomic pos
+  case rhsTi of
+    ExprInfo s P t eps -> do
+      when (not $ isNonSensitive s) $ throwTE pos ExpectingZeroSensitivity
+      let cxt' = M.insert x (Atomic $ ExprInfo (Sens 0) D T 0) cxt
+      (return . Atomic) $ CmdInfo cxt' P t eps 0        
+    ExprInfo s D t eps -> do
+      when (eps /= 0) $ throwTE pos ExpectingZeroEpsilon
+      let cxt' = M.insert x (Atomic $ ExprInfo s D T 0) cxt
+      (return . Atomic) $ CmdInfo cxt' D t 0 0
+    CmdInfo{} -> throwTE pos ExpectingAnExpression
+tyEffF (Branch e c1 c2 :&: pos) = TypeChecker $ \cxt -> do
+  eTi <- runTypeChecker e cxt >>= expectAtomic pos
+  c1Ti <- runTypeChecker c1 cxt >>= expectAtomic pos
+  c2Ti <- runTypeChecker c2 cxt >>= expectAtomic pos
+  case eTi of
+    ExprInfo s p t eps -> do
+      when (p /= D) $ throwTE pos ExpectingDeterminism
+      when (not $ isNonSensitive s) $ throwTE pos BranchConditionSensitive
+      when (eps /= 0) $ throwTE pos ExpectingZeroEpsilon
+      case (c1Ti, c2Ti) of
+        (CmdInfo cxt1 p1 t1 eps1 dlt1, CmdInfo cxt2 p2 t2 eps2 dlt2) -> do
+          cxt' <- mergeContext pos cxt1 cxt2
+          (return . Atomic) (CmdInfo cxt' (p1 <> p2) (t <> t1 <> t2) (max eps1 eps2) (max dlt1 dlt2))
+        _ -> throwTE pos ExpectingACommand
+    CmdInfo{} -> throwTE pos ExpectingAnExpression
