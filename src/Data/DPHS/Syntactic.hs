@@ -1,7 +1,6 @@
 module Data.DPHS.Syntactic where
 
 import Type.Reflection
-import Data.Comp.Multi.Annotation
 import Data.Comp.Multi.Term
 
 import Data.DPHS.SrcLoc

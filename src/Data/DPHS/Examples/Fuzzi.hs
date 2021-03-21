@@ -13,22 +13,51 @@ import Data.DPHS.Fuzzi
 import Data.DPHS.Syntax
 import Data.DPHS.Syntactic
 
-x :: Typeable a => Variable a
-x = V "x"
+vw, vx, vy, vz :: Typeable a => Variable a
+vw = V "w"
+vx = V "x"
+vy = V "y"
+vz = V "z"
 
-xx :: Term (WithPos FuzziF) (FuzziM Double)
-xx = v x
+vi :: Typeable a => Variable a
+vi = V "i"
+
+w, x, y, z :: Term (WithPos FuzziF) (FuzziM Double)
+w = v vw
+x = v vx
+y = v vy
+z = v vz
+
+i :: Term (WithPos FuzziF) (FuzziM Int)
+i = v vi
 
 ex1 :: EmMon (Term (WithPos FuzziF)) FuzziM ()
 ex1 = do
-  x .= laplace xx 1.0 
-  x .= laplace xx 2.0
+  vx .= laplace x 1.0 
+  vx .= laplace x 2.0
 
 deepEx1 :: Term (WithPos FuzziF) (FuzziM ())
 deepEx1 = toDeepRepr' ex1
 
 namedEx1 :: FreshM m => m (Term (WithPos NFuzziF) (FuzziM ()))
 namedEx1 = getCompose $ hxcata (hoasToNamedAlg @(WithPos FuzziF)) (xtoCxt deepEx1)
+
+ex2 :: EmMon (Term (WithPos FuzziF)) FuzziM ()
+ex2 = do
+  vi .= (0 :: Term (WithPos FuzziF) (FuzziM Int))
+  vx .= (1.0 :: Term (WithPos FuzziF) (FuzziM Double))
+  vy .= (1.0 :: Term (WithPos FuzziF) (FuzziM Double))
+  while (i .< 100) $ do
+    vw .= y
+    vy .= x + y
+    vx .= w
+    vi .= i + 1
+
+deepEx2 :: Term (WithPos FuzziF) (FuzziM ())
+deepEx2 = toDeepRepr' ex2
+
+namedEx2 :: FreshM m => m (Term (WithPos NFuzziF) (FuzziM ()))
+namedEx2 = getCompose $ hxcata (hoasToNamedAlg @(WithPos FuzziF)) (xtoCxt deepEx2)
 
 {-
 ex2 :: EmMon (Term FuzziF) FuzziM ()

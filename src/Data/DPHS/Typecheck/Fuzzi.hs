@@ -11,7 +11,6 @@ import Data.Comp.Multi.Algebra
 import Data.Comp.Multi.Annotation
 import Data.Comp.Multi.Derive
 import Data.Comp.Multi.HFunctor
-import Data.Comp.Multi.Term hiding (Cxt)
 import Optics
 
 import Data.DPHS.Syntax
@@ -137,8 +136,6 @@ expectAtomic pos _          = throwTE pos NotExpectingNestedChecker
 expectMacro :: MonadThrow m => Pos -> ITypeInfo m -> m (ITypeInfo m -> m (ITypeInfo m))
 expectMacro _pos (Macro f) = return f
 expectMacro pos _         = throwTE pos ExpectingNestedChecker
-
--- For typechecking monadic commands, use the fact that monad bound names are globally unique, and pass them through the intermediate typing contexts as internal type info. However, these names should be used linearly, and once an intermediate has been consumed, remove it from the context.
 
 tyMonadF :: MonadThrow m => Alg (SeqF :&: Pos) (TypeChecker m)
 tyMonadF (Seq a b :&: pos) = TypeChecker $ \cxt -> do

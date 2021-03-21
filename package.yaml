@@ -103,3 +103,46 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - dphs
+    - hspec >= 2.7.4 && < 2.8
+    - hspec-expectations >= 0.8.2 && < 0.9
+    default-extensions:
+    - DataKinds
+    - DeriveGeneric
+    - DuplicateRecordFields
+    - FlexibleContexts
+    - TypeApplications
+    - DeriveFunctor
+    - DeriveFoldable
+    - DeriveTraversable
+    - TypeOperators
+    - ApplicativeDo
+    - LambdaCase
+    - GeneralizedNewtypeDeriving
+    - TypeFamilies
+    - ScopedTypeVariables
+    - RankNTypes
+    - FlexibleInstances
+    - DeriveDataTypeable
+    - QuasiQuotes
+    - TemplateHaskell
+    - ConstraintKinds
+    - UndecidableInstances
+    - MultiParamTypeClasses
+    - KindSignatures
+    - FunctionalDependencies
+    - DataKinds
+    - GADTs
+    - StandaloneDeriving
+    - ViewPatterns
+    - CPP
+    - PartialTypeSignatures
+    - PolyKinds
+    - QuantifiedConstraints
+    - DerivingVia
+    - BangPatterns
+    - PatternSynonyms
+    - DuplicateRecordFields
+    - OverloadedLabels
+    - LambdaCase
+    - TypeFamilyDependencies
+    - OverloadedStrings

@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: e930eb518609f69466259bad4454a1a0f26bc32106ac2214c4b9008825b4e755
+-- hash: d7d5b17617b9205b106dbaa7aa8c87d662ce18560c0885dda4372a4d59847790
 
 name:           dphs
 version:        0.1.0.0
@@ -80,6 +80,7 @@ test-suite dphs-test
       Paths_dphs
   hs-source-dirs:
       test
+  default-extensions: DataKinds DeriveGeneric DuplicateRecordFields FlexibleContexts TypeApplications DeriveFunctor DeriveFoldable DeriveTraversable TypeOperators ApplicativeDo LambdaCase GeneralizedNewtypeDeriving TypeFamilies ScopedTypeVariables RankNTypes FlexibleInstances DeriveDataTypeable QuasiQuotes TemplateHaskell ConstraintKinds UndecidableInstances MultiParamTypeClasses KindSignatures FunctionalDependencies DataKinds GADTs StandaloneDeriving ViewPatterns CPP PartialTypeSignatures PolyKinds QuantifiedConstraints DerivingVia BangPatterns PatternSynonyms DuplicateRecordFields OverloadedLabels LambdaCase TypeFamilyDependencies OverloadedStrings
   ghc-options: -Wall -Wno-partial-type-signatures -Wno-name-shadowing -fwarn-tabs -fwarn-incomplete-uni-patterns -fwarn-incomplete-record-updates -optP-Wno-nonportable-include-path -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.8 && <5
@@ -87,6 +88,8 @@ test-suite dphs-test
     , containers >=0.6.2.1 && <1.0
     , dphs
     , exceptions >=0.10.4 && <1.0
+    , hspec >=2.7.4 && <2.8
+    , hspec-expectations >=0.8.2 && <0.9
     , mtl >=2.2.2 && <2.3
     , optics >=0.3 && <1.0
     , text >=1.2.4.0 && <1.3
