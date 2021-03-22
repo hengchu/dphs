@@ -7,6 +7,7 @@ import Data.Functor.Compose
 import GHC.Stack
 
 import Data.DPHS.Name
+import Data.DPHS.Types
 import Data.DPHS.HXFunctor
 import Data.DPHS.Syntactic
 import Data.DPHS.SrcLoc
@@ -80,6 +81,18 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
           makeShowHF, makeEqHF, makeOrdHF,
           smartConstructors, smartAConstructors]
          [''ArithF])
+
+-- |Container types and operations.
+data ContainerF :: (* -> *) -> * -> * where
+  At :: ( Show (SNat i)
+        , Index i n
+        ) => r (Vec n a) -> SNat i -> ContainerF r a
+
+$(derive [makeHFunctor, makeHFoldable, makeHTraversable,
+          makeShowHF,
+          --makeEqHF, makeOrdHF,
+          smartConstructors, smartAConstructors]
+         [''ContainerF])
 
 {-
 instance {-# OVERLAPPABLE #-}
