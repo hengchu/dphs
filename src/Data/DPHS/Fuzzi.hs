@@ -119,7 +119,7 @@ data ExtensionF :: (* -> *) -> * -> * where
        -> r (FuzziM (Bag a))
        -> r (FuzziM a -> FuzziM Int)
        -> ExtensionF r (FuzziM (Array (Bag a)))
-       
+
   AdvComp :: Int           -- ^ total number of iterations
           -> Double        -- ^ omega
           -> r (FuzziM ()) -- ^ loop body
@@ -219,7 +219,7 @@ data CLambdaF :: (* -> *) -> * -> * where
   CLam :: (Typeable a, Typeable b) => Class -> Variable a -> r b -> CLambdaF r (a -> b)
   CApp :: (Typeable a, Typeable b) => r (a -> b) -> r a -> CLambdaF r b
   CVar :: Typeable a => Variable a -> CLambdaF r a
-  
+
 $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
           makeShowHF, --makeEqHF, makeOrdHF,
           smartConstructors, smartAConstructors]
@@ -299,9 +299,15 @@ infix 4 .=
 
 laplace :: HasCallStack
         => Term (WithPos FuzziF) (FuzziM Double)
-        -> Double 
+        -> Double
         -> Term (WithPos FuzziF) (FuzziM Double)
 laplace width center = iALaplace (fromCallStack callStack) width center
+
+bsum :: HasCallStack
+     => Double
+     -> Term (WithPos FuzziF) (FuzziM (Bag Double))
+     -> Term (WithPos FuzziF) (FuzziM Double)
+bsum clipBound bag = iABSum (fromCallStack callStack) clipBound bag
 
 bmap :: forall a b.
         (Typeable a, Typeable b, HasCallStack)
@@ -558,10 +564,10 @@ simplMonad = fmap code . cataM simplMonadAlg
 preprocess :: MonadThrow m => Term (WithPos NFuzziF) i -> m (Term (WithPos NSFuzziF1) i)
 preprocess = fmap removeLamClass . simplMonad . classifyLam . removeAllBindRet
 
-instance (HFunctor h, LambdaF :<: h) => Desugar CLambdaF h where 
+instance (HFunctor h, LambdaF :<: h) => Desugar CLambdaF h where
   desugHom' (CLam _ x body) = iLam x body
   desugHom' (CApp f a) = iApp f a
   desugHom' (CVar x) = iVar x
 
-removeLamClass :: Term (WithPos NSFuzziF) i -> Term (WithPos NSFuzziF1) i 
+removeLamClass :: Term (WithPos NSFuzziF) i -> Term (WithPos NSFuzziF1) i
 removeLamClass = desugarA

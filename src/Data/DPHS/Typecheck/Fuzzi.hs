@@ -119,13 +119,16 @@ data TypeInfo m =
     tiTermAnn :: TermAnn,
     tiEpsilon :: Double,
     tiDelta   :: Double
-  } 
+  }
 
 makeFieldLabelsWith abbreviatedFieldLabels ''TypeInfo
 makePrisms ''TypeInfo
 
+data ExpectKind = Expr | Cmd
+  deriving (Show, Eq, Ord)
+
 newtype TypeChecker m a =
-  TypeChecker { runTypeChecker :: Cxt m -> m (ITypeInfo m) }
+  TypeChecker { runTypeChecker :: ExpectKind -> Cxt m -> m (ITypeInfo m) }
 
 class TyAlg (h :: (* -> *) -> * -> *) where
   tyAlg :: MonadThrow m => Alg h (TypeChecker m)
@@ -178,25 +181,25 @@ expectMacro _pos (Macro f) = return f
 expectMacro pos _         = throwTE pos ExpectingNestedChecker
 
 tySeqF :: MonadThrow m => Alg (SeqF :&: Pos) (TypeChecker m)
-tySeqF (Seq a b :&: pos) = TypeChecker $ \cxt -> do
-  aTi <- runTypeChecker a cxt >>= expectAtomic pos
+tySeqF (Seq a b :&: pos) = TypeChecker $ \ek cxt -> do
+  aTi <- runTypeChecker a ek cxt >>= expectAtomic pos
   case aTi of
     CmdInfo cxt' p t e d -> do
-      bTi <- runTypeChecker b cxt' >>= expectAtomic pos
+      bTi <- runTypeChecker b ek cxt' >>= expectAtomic pos
       (return . Atomic) (bTi & #probAnn %~ (<> p)
                          & #termAnn %~ (<> t)
                          & #epsilon %~ (+ e)
                          & #delta %~ (+ d))
     ExprInfo{} -> throwTE pos ExpectingACommand
-      
+
 tyExprF :: MonadThrow m => Alg (ExprF :&: Pos) (TypeChecker m)
-tyExprF (Deref (V x) :&: p) = TypeChecker $ \cxt -> do
+tyExprF (Deref (V x) :&: p) = TypeChecker $ \_ek cxt -> do
   case M.lookup x cxt of
     Just xTi -> return xTi
     Nothing -> throwTE p (OutOfScopeVariable x)
-tyExprF (Index arr idx :&: pos) = TypeChecker $ \cxt -> do
-  arrTi <- runTypeChecker arr cxt >>= expectAtomic pos
-  idxTi <- runTypeChecker idx cxt >>= expectAtomic pos
+tyExprF (Index arr idx :&: pos) = TypeChecker $ \ek cxt -> do
+  arrTi <- runTypeChecker arr ek cxt >>= expectAtomic pos
+  idxTi <- runTypeChecker idx ek cxt >>= expectAtomic pos
   case arrTi of
     ExprInfo arrS arrP arrT arrEps -> do
       when (arrP /= D) $ throwTE pos ExpectingDeterminism
@@ -207,9 +210,9 @@ tyExprF (Index arr idx :&: pos) = TypeChecker $ \cxt -> do
           return (Atomic (ExprInfo arrS (arrP <> p) (arrT <> t) eps))
         _ -> throwTE pos ExpectingAnExpression
     _ -> throwTE pos ExpectingAnExpression
-tyExprF (Resize arr size :&: pos) = TypeChecker $ \cxt -> do
-  arrTi <- runTypeChecker arr cxt >>= expectAtomic pos
-  sizeTi <- runTypeChecker size cxt >>= expectAtomic pos
+tyExprF (Resize arr size :&: pos) = TypeChecker $ \ek cxt -> do
+  arrTi <- runTypeChecker arr ek cxt >>= expectAtomic pos
+  sizeTi <- runTypeChecker size ek cxt >>= expectAtomic pos
   case arrTi of
     ExprInfo arrS arrP arrT arrEps -> do
       when (arrP /= D) $ throwTE pos ExpectingDeterminism
@@ -220,8 +223,8 @@ tyExprF (Resize arr size :&: pos) = TypeChecker $ \cxt -> do
           return (Atomic (ExprInfo arrS (arrP <> p) (arrT <> t) eps))
         _ -> throwTE pos ExpectingAnExpression
     _ -> throwTE pos ExpectingAnExpression
-tyExprF (ArrLit xs :&: pos) = TypeChecker $ \cxt -> do
-  xTis <- mapM (\checker -> runTypeChecker checker cxt >>= expectAtomic pos) xs
+tyExprF (ArrLit xs :&: pos) = TypeChecker $ \ek cxt -> do
+  xTis <- mapM (\checker -> runTypeChecker checker ek cxt >>= expectAtomic pos) xs
   let totalSens :: Maybe Sensitivity = foldMap (\ti -> preview #sensitivity ti) xTis
   let p = foldMap (\ti -> ti ^. #probAnn) xTis
   let t = foldMap (\ti -> ti ^. #termAnn) xTis
@@ -231,8 +234,8 @@ tyExprF (ArrLit xs :&: pos) = TypeChecker $ \cxt -> do
     Nothing -> throwTE pos ExpectingAnExpression
 
 tyPrivMechF :: MonadThrow m => Alg (PrivMechF :&: Pos) (TypeChecker m)
-tyPrivMechF (Laplace center width :&: pos) = TypeChecker $ \cxt -> do
-  centerTi <- runTypeChecker center cxt >>= expectAtomic pos
+tyPrivMechF (Laplace center width :&: pos) = TypeChecker $ \ek cxt -> do
+  centerTi <- runTypeChecker center ek cxt >>= expectAtomic pos
   case centerTi of
     ExprInfo (asSens -> s) _ t e -> do
       let e' = s / width
@@ -240,15 +243,15 @@ tyPrivMechF (Laplace center width :&: pos) = TypeChecker $ \cxt -> do
     _ -> throwTE pos ExpectingAnExpression
 
 tyLambdaF :: MonadThrow m => Alg (LambdaF :&: Pos) (TypeChecker m)
-tyLambdaF (Lam (V x) body :&: _pos) = TypeChecker $ \cxt -> do
+tyLambdaF (Lam (V x) body :&: _pos) = TypeChecker $ \ek cxt -> do
   (return . Macro) $ \xTy -> do
     let cxt' = M.insert x xTy cxt
-    runTypeChecker body cxt'
-tyLambdaF (App f arg :&: pos) = TypeChecker $ \cxt -> do
-  fTi <- runTypeChecker f cxt >>= expectMacro pos
-  argTi <- runTypeChecker arg cxt
+    runTypeChecker body ek cxt'
+tyLambdaF (App f arg :&: pos) = TypeChecker $ \ek cxt -> do
+  fTi <- runTypeChecker f ek cxt >>= expectMacro pos
+  argTi <- runTypeChecker arg ek cxt
   fTi argTi
-tyLambdaF (Var (V x) :&: pos) = TypeChecker $ \cxt -> do
+tyLambdaF (Var (V x) :&: pos) = TypeChecker $ \_ek cxt -> do
   case M.lookup x cxt of
     Nothing -> throwTE pos (OutOfScopeVariable x)
     Just t -> return t
@@ -278,46 +281,48 @@ isEquivalent m1 m2 =
         isSubIType _                            _         = False
 
 tyEffF :: MonadThrow m => Alg (EffF :&: Pos) (TypeChecker m)
-tyEffF (Assign (V x) rhs :&: pos) = TypeChecker $ \cxt -> do
-  rhsTi <- runTypeChecker rhs cxt >>= expectAtomic pos
+tyEffF (Assign (V x) rhs :&: pos) = TypeChecker $ \_ek cxt -> do
+  rhsTi <- runTypeChecker rhs Expr cxt >>= expectAtomic pos
   case rhsTi of
     ExprInfo s P t eps -> do
       when (not $ isNonSensitive s) $ throwTE pos ExpectingZeroSensitivity
       let cxt' = M.insert x (Atomic $ ExprInfo (Sens 0) D T 0) cxt
-      (return . Atomic) $ CmdInfo cxt' P t eps 0        
+      (return . Atomic) $ CmdInfo cxt' P t eps 0
     ExprInfo s D t eps -> do
       when (eps /= 0) $ throwTE pos ExpectingZeroEpsilon
       let cxt' = M.insert x (Atomic $ ExprInfo s D T 0) cxt
       (return . Atomic) $ CmdInfo cxt' D t 0 0
     CmdInfo{} -> throwTE pos ExpectingAnExpression
-tyEffF (Branch e c1 c2 :&: pos) = TypeChecker $ \cxt -> do
-  eTi <- runTypeChecker e cxt >>= expectAtomic pos
-  c1Ti <- runTypeChecker c1 cxt >>= expectAtomic pos
-  c2Ti <- runTypeChecker c2 cxt >>= expectAtomic pos
-  case eTi of
-    ExprInfo s p t eps -> do
+tyEffF (Branch e c1 c2 :&: pos) = TypeChecker $ \ek cxt -> do
+  eTi <- runTypeChecker e Expr cxt >>= expectAtomic pos
+  c1Ti <- runTypeChecker c1 ek cxt >>= expectAtomic pos
+  c2Ti <- runTypeChecker c2 ek cxt >>= expectAtomic pos
+  case (eTi, ek) of
+    (ExprInfo s p t eps, Cmd)  -> do
       when (p /= D) $ throwTE pos ExpectingDeterminism
       when (eps /= 0) $ throwTE pos ExpectingZeroEpsilon
-      if isNonSensitive s
-      then do
-        case (c1Ti, c2Ti) of
-          (CmdInfo cxt1 p1 t1 eps1 dlt1, CmdInfo cxt2 p2 t2 eps2 dlt2) -> do
-            cxt' <- mergeContext pos cxt1 cxt2
-            (return . Atomic) (CmdInfo cxt' (p1 <> p2) (t <> t1 <> t2) (max eps1 eps2) (max dlt1 dlt2))
-          _ -> throwTE pos ExpectingACommand
-      else do
-        case (c1Ti, c2Ti) of
-          (ExprInfo _ p1 t1 eps1, ExprInfo _ p2 t2 eps2) -> do
-            when (p1 /= D || p2 /= D) $ throwTE pos ExpectingDeterminism
+      when (not $ isNonSensitive s) $ throwTE pos ExpectingZeroSensitivity
+      case (c1Ti, c2Ti) of
+        (CmdInfo cxt1 p1 t1 eps1 dlt1, CmdInfo cxt2 p2 t2 eps2 dlt2) -> do
+          cxt' <- mergeContext pos cxt1 cxt2
+          (return . Atomic) (CmdInfo cxt' (p1 <> p2) (t <> t1 <> t2) (max eps1 eps2) (max dlt1 dlt2))
+        _ -> throwTE pos ExpectingACommand
+    (ExprInfo s p t eps, Expr) -> do
+      when (p /= D) $ throwTE pos ExpectingDeterminism
+      when (eps /= 0) $ throwTE pos ExpectingZeroEpsilon
+      case (c1Ti, c2Ti) of
+        (ExprInfo s1 p1 t1 eps1, ExprInfo s2 p2 t2 eps2) ->
+          if isNonSensitive s
+          then (return . Atomic) (ExprInfo (s1 <> s2) (p1 <> p2) (t1 <> t2) (eps1 + eps2))
+          else do
             when (t1 /= T || t2 /= T) $ throwTE pos ExpectingTermination
-            when (eps1 /= 0 || eps2 /= 0) $ throwTE pos ExpectingZeroEpsilon
-            (return . Atomic) (ExprInfo (Sens inf) D t 0)
-          _ -> throwTE pos ExpectingAnExpression
-    CmdInfo{} -> throwTE pos ExpectingAnExpression
+            (return . Atomic) (ExprInfo (Sens inf) (p1 <> p2) t (eps1+eps2))
+        _ -> throwTE pos ExpectingAnExpression
+    _ -> throwTE pos ExpectingAnExpression
   where inf = 1/0
-tyEffF (While e c :&: pos) = TypeChecker $ \cxt -> do
-  eTi <- runTypeChecker e cxt >>= expectAtomic pos
-  cTi <- runTypeChecker c cxt >>= expectAtomic pos
+tyEffF (While e c :&: pos) = TypeChecker $ \_ek cxt -> do
+  eTi <- runTypeChecker e Expr cxt >>= expectAtomic pos
+  cTi <- runTypeChecker c Cmd cxt >>= expectAtomic pos
   case eTi of
     ExprInfo s p _t eps -> do
       when (not $ isNonSensitive s) $ throwTE pos ExpectingZeroSensitivity
@@ -336,8 +341,8 @@ tyEffF (While e c :&: pos) = TypeChecker $ \cxt -> do
 
 tyExtensionF :: MonadThrow m
              => Alg (ExtensionF :&: Pos) (TypeChecker m)
-tyExtensionF (BMap x f :&: pos) = TypeChecker $ \cxt -> do
-  fChecker <- runTypeChecker f cxt >>= expectMacro pos
+tyExtensionF (BMap x f :&: pos) = TypeChecker $ \ek cxt -> do
+  fChecker <- runTypeChecker f Expr cxt >>= expectMacro pos
   fOutTi0 <- fChecker (Atomic (ExprInfo (Sens 0) D T 0)) >>= expectAtomic pos
   fOutTiInf <- fChecker (Atomic (ExprInfo (Sens inf) D T 0)) >>= expectAtomic pos
   case (fOutTi0, fOutTiInf) of
@@ -348,24 +353,24 @@ tyExtensionF (BMap x f :&: pos) = TypeChecker $ \cxt -> do
       when (p0 /= D || pInf /= D) $ throwTE pos ExpectingDeterminism
       when (t0 /= T || tInf /= T) $ throwTE pos ExpectingTermination
       when (eps0 /= 0 || epsInf /= 0) $ throwTE pos ExpectingZeroEpsilon
-      xTi <- runTypeChecker x cxt >>= expectAtomic pos
+      xTi <- runTypeChecker x ek cxt >>= expectAtomic pos
       case xTi of
         ExprInfo xSens _ _ _ ->
           (return . Atomic) (ExprInfo xSens D T 0)
         _ -> throwTE pos ExpectingAnExpression
-    _ -> throwTE pos ExpectingAnExpression    
+    _ -> throwTE pos ExpectingAnExpression
   where inf = 1/0
-tyExtensionF (BSum bound x :&: pos) = TypeChecker $ \cxt -> do
+tyExtensionF (BSum bound x :&: pos) = TypeChecker $ \_ek cxt -> do
   when (bound < 0) $ throwTE pos NegativeBSumBound
-  xTi <- runTypeChecker x cxt >>= expectAtomic pos
+  xTi <- runTypeChecker x Expr cxt >>= expectAtomic pos
   case xTi of
     ExprInfo s p t eps -> do
       when (p /= D) $ throwTE pos ExpectingDeterminism
       when (eps /= 0) $ throwTE pos ExpectingZeroEpsilon
-      (return . Atomic) (ExprInfo (scaleSens bound s) D t 0) 
+      (return . Atomic) (ExprInfo (scaleSens bound s) D t 0)
     _ -> throwTE pos ExpectingACommand
-tyExtensionF (AMap x f :&: pos) = TypeChecker $ \cxt -> do
-  fChecker <- runTypeChecker f cxt >>= expectMacro pos
+tyExtensionF (AMap x f :&: pos) = TypeChecker $ \ek cxt -> do
+  fChecker <- runTypeChecker f Expr cxt >>= expectMacro pos
   fOutTi0 <- fChecker (Atomic (ExprInfo (Sens 0) D T 0)) >>= expectAtomic pos
   fOutTi1 <- fChecker (Atomic (ExprInfo (Sens 1) D T 0)) >>= expectAtomic pos
   case (fOutTi0, fOutTi1) of
@@ -375,7 +380,7 @@ tyExtensionF (AMap x f :&: pos) = TypeChecker $ \cxt -> do
       when (not $ isNonSensitive s0) $ throwTE pos ExpectingZeroSensitivity
       when (p0 /= D || p1 /= D) $ throwTE pos ExpectingDeterminism
       when (eps0 /= 0 || eps1 /= 0) $ throwTE pos ExpectingZeroEpsilon
-      xTi <- runTypeChecker x cxt >>= expectAtomic pos
+      xTi <- runTypeChecker x ek cxt >>= expectAtomic pos
       case xTi of
         ExprInfo xSens _ t _ ->
           let k = case s1 of
@@ -384,9 +389,9 @@ tyExtensionF (AMap x f :&: pos) = TypeChecker $ \cxt -> do
           in (return . Atomic) (ExprInfo (scaleSens k xSens) D (t <> t0 <> t1) 0)
         _ -> throwTE pos ExpectingAnExpression
     _ -> throwTE pos ExpectingAnExpression
-tyExtensionF (Part n x f :&: pos) = TypeChecker $ \cxt -> do
+tyExtensionF (Part n x f :&: pos) = TypeChecker $ \ek cxt -> do
   when (n < 0) $ throwTE pos NegativePartitionCount
-  fChecker <- runTypeChecker f cxt >>= expectMacro pos
+  fChecker <- runTypeChecker f Expr cxt >>= expectMacro pos
   fOutTi0 <- fChecker (Atomic (ExprInfo (Sens 0) D T 0)) >>= expectAtomic pos
   fOutTiInf <- fChecker (Atomic (ExprInfo (Sens inf) D T 0)) >>= expectAtomic pos
   case (fOutTi0, fOutTiInf) of
@@ -397,15 +402,15 @@ tyExtensionF (Part n x f :&: pos) = TypeChecker $ \cxt -> do
       when (p0 /= D || pInf /= D) $ throwTE pos ExpectingDeterminism
       when (t0 /= T || tInf /= T) $ throwTE pos ExpectingTermination
       when (eps0 /= 0 || epsInf /= 0) $ throwTE pos ExpectingZeroEpsilon
-      xTi <- runTypeChecker x cxt >>= expectAtomic pos
+      xTi <- runTypeChecker x ek cxt >>= expectAtomic pos
       case xTi of
         ExprInfo s _ _ _ ->
           (return . Atomic) (ExprInfo s D T 0)
         _ -> throwTE pos ExpectingACommand
     _ -> throwTE pos ExpectingAnExpression
   where inf = 1/0
-tyExtensionF (AdvComp n omega c :&: pos) = TypeChecker $ \cxt -> do
-  cTi <- runTypeChecker c cxt >>= expectAtomic pos
+tyExtensionF (AdvComp n omega c :&: pos) = TypeChecker $ \_ek cxt -> do
+  cTi <- runTypeChecker c Cmd cxt >>= expectAtomic pos
   case cTi of
     CmdInfo cxt' p t eps dlt -> do
       let nDouble = fromIntegral n
@@ -418,12 +423,12 @@ tyExtensionF (AdvComp n omega c :&: pos) = TypeChecker $ \cxt -> do
 
 tyArithF :: MonadThrow m => Alg (ArithF :&: Pos) (TypeChecker m)
 tyArithF (IntLit v :&: _) =
-  TypeChecker $ \_cxt -> (return . Atomic) (ExprInfo (Const (fromIntegral v)) D T 0) 
+  TypeChecker $ \_ek _cxt -> (return . Atomic) (ExprInfo (Const (fromIntegral v)) D T 0)
 tyArithF (FracLit v :&: _) =
-  TypeChecker $ \_cxt -> (return . Atomic) (ExprInfo (Const (fromRational v)) D T 0) 
-tyArithF (Add e1 e2 :&: pos) = TypeChecker $ \cxt -> do
-  e1Ti <- runTypeChecker e1 cxt >>= expectAtomic pos
-  e2Ti <- runTypeChecker e2 cxt >>= expectAtomic pos
+  TypeChecker $ \_ek _cxt -> (return . Atomic) (ExprInfo (Const (fromRational v)) D T 0)
+tyArithF (Add e1 e2 :&: pos) = TypeChecker $ \ek cxt -> do
+  e1Ti <- runTypeChecker e1 ek cxt >>= expectAtomic pos
+  e2Ti <- runTypeChecker e2 ek cxt >>= expectAtomic pos
   case (e1Ti, e2Ti) of
     ( ExprInfo s1 p1 t1 eps1
       , ExprInfo s2 p2 t2 eps2
@@ -434,9 +439,9 @@ tyArithF (Add e1 e2 :&: pos) = TypeChecker $ \cxt -> do
         _ ->
           (return . Atomic) (ExprInfo (s1 <> s2) (p1 <> p2) (t1 <> t2) (eps1+eps2))
     _ -> throwTE pos ExpectingAnExpression
-tyArithF (Sub e1 e2 :&: pos) = TypeChecker $ \cxt -> do
-  e1Ti <- runTypeChecker e1 cxt >>= expectAtomic pos
-  e2Ti <- runTypeChecker e2 cxt >>= expectAtomic pos
+tyArithF (Sub e1 e2 :&: pos) = TypeChecker $ \ek cxt -> do
+  e1Ti <- runTypeChecker e1 ek cxt >>= expectAtomic pos
+  e2Ti <- runTypeChecker e2 ek cxt >>= expectAtomic pos
   case (e1Ti, e2Ti) of
     ( ExprInfo s1 p1 t1 eps1
       , ExprInfo s2 p2 t2 eps2
@@ -447,16 +452,16 @@ tyArithF (Sub e1 e2 :&: pos) = TypeChecker $ \cxt -> do
         _ ->
           (return . Atomic) (ExprInfo (s1 <> s2) (p1 <> p2) (t1 <> t2) (eps1+eps2))
     _ -> throwTE pos ExpectingAnExpression
-tyArithF (Abs e :&: pos) = TypeChecker $ \cxt -> do
-  eTi <- runTypeChecker e cxt >>= expectAtomic pos
+tyArithF (Abs e :&: pos) = TypeChecker $ \ek cxt -> do
+  eTi <- runTypeChecker e ek cxt >>= expectAtomic pos
   case eTi of
     ExprInfo s p t eps ->
       case s of
         Const k -> (return . Atomic) (ExprInfo (Const (abs k)) p t eps)
         _ -> (return . Atomic) (ExprInfo s p t eps) -- true by reverse triangle inequality
     _ -> throwTE pos ExpectingAnExpression
-tyArithF (Signum e :&: pos) = TypeChecker $ \cxt -> do
-  eTi <- runTypeChecker e cxt >>= expectAtomic pos
+tyArithF (Signum e :&: pos) = TypeChecker $ \ek cxt -> do
+  eTi <- runTypeChecker e ek cxt >>= expectAtomic pos
   case eTi of
     ExprInfo s p t eps ->
       case s of
@@ -464,18 +469,18 @@ tyArithF (Signum e :&: pos) = TypeChecker $ \cxt -> do
         Sens 0 -> (return . Atomic) (ExprInfo (Sens 0) p t eps)
         _ -> (return . Atomic) (ExprInfo (Sens 2) p t eps)
     _ -> throwTE pos ExpectingAnExpression
-tyArithF (Mult e1 e2 :&: pos) = TypeChecker $ \cxt -> do
-  e1Ti <- runTypeChecker e1 cxt >>= expectAtomic pos
-  e2Ti <- runTypeChecker e2 cxt >>= expectAtomic pos
+tyArithF (Mult e1 e2 :&: pos) = TypeChecker $ \ek cxt -> do
+  e1Ti <- runTypeChecker e1 ek cxt >>= expectAtomic pos
+  e2Ti <- runTypeChecker e2 ek cxt >>= expectAtomic pos
   case (e1Ti, e2Ti) of
     ( ExprInfo s1 p1 t1 eps1
       , ExprInfo s2 p2 t2 eps2
       ) ->
       (return . Atomic) (ExprInfo (sensMult s1 s2) (p1 <> p2) (t1 <> t2) (eps1+eps2))
     _ -> throwTE pos ExpectingAnExpression
-tyArithF (Div e1 e2 :&: pos) = TypeChecker $ \cxt -> do
-  e1Ti <- runTypeChecker e1 cxt >>= expectAtomic pos
-  e2Ti <- runTypeChecker e2 cxt >>= expectAtomic pos
+tyArithF (Div e1 e2 :&: pos) = TypeChecker $ \ek cxt -> do
+  e1Ti <- runTypeChecker e1 ek cxt >>= expectAtomic pos
+  e2Ti <- runTypeChecker e2 ek cxt >>= expectAtomic pos
   case (e1Ti, e2Ti) of
     ( ExprInfo s1 p1 t1 eps1
       , ExprInfo s2 p2 t2 eps2
@@ -487,9 +492,9 @@ tyArithF (Div e1 e2 :&: pos) = TypeChecker $ \cxt -> do
         Sens _ ->
           (return . Atomic) (ExprInfo (sensDiv s1 s2) (p1 <> p2) C (eps1+eps2))
     _ -> throwTE pos ExpectingAnExpression
-tyArithF (IDiv e1 e2 :&: pos) = TypeChecker $ \cxt -> do
-  e1Ti <- runTypeChecker e1 cxt >>= expectAtomic pos
-  e2Ti <- runTypeChecker e2 cxt >>= expectAtomic pos
+tyArithF (IDiv e1 e2 :&: pos) = TypeChecker $ \ek cxt -> do
+  e1Ti <- runTypeChecker e1 ek cxt >>= expectAtomic pos
+  e2Ti <- runTypeChecker e2 ek cxt >>= expectAtomic pos
   case (e1Ti, e2Ti) of
     ( ExprInfo s1 p1 t1 eps1
       , ExprInfo s2 p2 t2 eps2
@@ -501,9 +506,9 @@ tyArithF (IDiv e1 e2 :&: pos) = TypeChecker $ \cxt -> do
         Sens _ ->
           (return . Atomic) (ExprInfo (sensDiv s1 s2) (p1 <> p2) C (eps1+eps2))
     _ -> throwTE pos ExpectingAnExpression
-tyArithF (IMod e1 e2 :&: pos) = TypeChecker $ \cxt -> do
-  e1Ti <- runTypeChecker e1 cxt >>= expectAtomic pos
-  e2Ti <- runTypeChecker e2 cxt >>= expectAtomic pos
+tyArithF (IMod e1 e2 :&: pos) = TypeChecker $ \ek cxt -> do
+  e1Ti <- runTypeChecker e1 ek cxt >>= expectAtomic pos
+  e2Ti <- runTypeChecker e2 ek cxt >>= expectAtomic pos
   case (e1Ti, e2Ti) of
     ( ExprInfo s1 p1 t1 eps1
       , ExprInfo s2 p2 t2 eps2
@@ -515,8 +520,8 @@ tyArithF (IMod e1 e2 :&: pos) = TypeChecker $ \cxt -> do
         Sens _ ->
           (return . Atomic) (ExprInfo (sensMod s1 s2) (p1 <> p2) C (eps1+eps2))
     _ -> throwTE pos ExpectingAnExpression
-tyArithF (Exp e :&: pos) = TypeChecker $ \cxt -> do
-  eTi <- runTypeChecker e cxt >>= expectAtomic pos
+tyArithF (Exp e :&: pos) = TypeChecker $ \ek cxt -> do
+  eTi <- runTypeChecker e ek cxt >>= expectAtomic pos
   case eTi of
     ExprInfo s p t eps ->
       case s of
@@ -525,8 +530,8 @@ tyArithF (Exp e :&: pos) = TypeChecker $ \cxt -> do
         Sens _ -> (return . Atomic) $ ExprInfo (Sens inf) p t eps
     _ -> throwTE pos ExpectingAnExpression
   where inf = 1/0
-tyArithF (Log e :&: pos) = TypeChecker $ \cxt -> do
-  eTi <- runTypeChecker e cxt >>= expectAtomic pos
+tyArithF (Log e :&: pos) = TypeChecker $ \ek cxt -> do
+  eTi <- runTypeChecker e ek cxt >>= expectAtomic pos
   case eTi of
     ExprInfo s p t eps ->
       case s of
@@ -535,8 +540,8 @@ tyArithF (Log e :&: pos) = TypeChecker $ \cxt -> do
         Sens _ -> (return . Atomic) $ ExprInfo (Sens inf) p t eps
     _ -> throwTE pos ExpectingAnExpression
   where inf = 1/0
-tyArithF (Sqrt e :&: pos) = TypeChecker $ \cxt -> do
-  eTi <- runTypeChecker e cxt >>= expectAtomic pos
+tyArithF (Sqrt e :&: pos) = TypeChecker $ \ek cxt -> do
+  eTi <- runTypeChecker e ek cxt >>= expectAtomic pos
   case eTi of
     ExprInfo s p t eps ->
       case s of
@@ -557,40 +562,40 @@ sensCmpM _pos (ExprInfo s1 p1 t1 eps1) (ExprInfo s2 p2 t2 eps2) =
 sensCmpM pos _ _ = throwTE pos ExpectingAnExpression
 
 tyCompareF :: MonadThrow m => Alg (CompareF :&: Pos) (TypeChecker m)
-tyCompareF (IsEq e1 e2 :&: pos) = TypeChecker $ \cxt -> do
-  e1Ti <- runTypeChecker e1 cxt >>= expectAtomic pos
-  e2Ti <- runTypeChecker e2 cxt >>= expectAtomic pos
+tyCompareF (IsEq e1 e2 :&: pos) = TypeChecker $ \ek cxt -> do
+  e1Ti <- runTypeChecker e1 ek cxt >>= expectAtomic pos
+  e2Ti <- runTypeChecker e2 ek cxt >>= expectAtomic pos
   sensCmpM pos e1Ti e2Ti
-tyCompareF (IsNeq e1 e2 :&: pos) = TypeChecker $ \cxt -> do
-  e1Ti <- runTypeChecker e1 cxt >>= expectAtomic pos
-  e2Ti <- runTypeChecker e2 cxt >>= expectAtomic pos
+tyCompareF (IsNeq e1 e2 :&: pos) = TypeChecker $ \ek cxt -> do
+  e1Ti <- runTypeChecker e1 ek cxt >>= expectAtomic pos
+  e2Ti <- runTypeChecker e2 ek cxt >>= expectAtomic pos
   sensCmpM pos e1Ti e2Ti
-tyCompareF (IsLt e1 e2 :&: pos) = TypeChecker $ \cxt -> do
-  e1Ti <- runTypeChecker e1 cxt >>= expectAtomic pos
-  e2Ti <- runTypeChecker e2 cxt >>= expectAtomic pos
+tyCompareF (IsLt e1 e2 :&: pos) = TypeChecker $ \ek cxt -> do
+  e1Ti <- runTypeChecker e1 ek cxt >>= expectAtomic pos
+  e2Ti <- runTypeChecker e2 ek cxt >>= expectAtomic pos
   sensCmpM pos e1Ti e2Ti
-tyCompareF (IsLe e1 e2 :&: pos) = TypeChecker $ \cxt -> do
-  e1Ti <- runTypeChecker e1 cxt >>= expectAtomic pos
-  e2Ti <- runTypeChecker e2 cxt >>= expectAtomic pos
+tyCompareF (IsLe e1 e2 :&: pos) = TypeChecker $ \ek cxt -> do
+  e1Ti <- runTypeChecker e1 ek cxt >>= expectAtomic pos
+  e2Ti <- runTypeChecker e2 ek cxt >>= expectAtomic pos
   sensCmpM pos e1Ti e2Ti
-tyCompareF (IsGt e1 e2 :&: pos) = TypeChecker $ \cxt -> do
-  e1Ti <- runTypeChecker e1 cxt >>= expectAtomic pos
-  e2Ti <- runTypeChecker e2 cxt >>= expectAtomic pos
+tyCompareF (IsGt e1 e2 :&: pos) = TypeChecker $ \ek cxt -> do
+  e1Ti <- runTypeChecker e1 ek cxt >>= expectAtomic pos
+  e2Ti <- runTypeChecker e2 ek cxt >>= expectAtomic pos
   sensCmpM pos e1Ti e2Ti
-tyCompareF (IsGe e1 e2 :&: pos) = TypeChecker $ \cxt -> do
-  e1Ti <- runTypeChecker e1 cxt >>= expectAtomic pos
-  e2Ti <- runTypeChecker e2 cxt >>= expectAtomic pos
+tyCompareF (IsGe e1 e2 :&: pos) = TypeChecker $ \ek cxt -> do
+  e1Ti <- runTypeChecker e1 ek cxt >>= expectAtomic pos
+  e2Ti <- runTypeChecker e2 ek cxt >>= expectAtomic pos
   sensCmpM pos e1Ti e2Ti
-tyCompareF (And e1 e2 :&: pos)  = TypeChecker $ \cxt -> do
-  e1Ti <- runTypeChecker e1 cxt >>= expectAtomic pos
-  e2Ti <- runTypeChecker e2 cxt >>= expectAtomic pos
+tyCompareF (And e1 e2 :&: pos)  = TypeChecker $ \ek cxt -> do
+  e1Ti <- runTypeChecker e1 ek cxt >>= expectAtomic pos
+  e2Ti <- runTypeChecker e2 ek cxt >>= expectAtomic pos
   sensCmpM pos e1Ti e2Ti
-tyCompareF (Or e1 e2 :&: pos)  = TypeChecker $ \cxt -> do
-  e1Ti <- runTypeChecker e1 cxt >>= expectAtomic pos
-  e2Ti <- runTypeChecker e2 cxt >>= expectAtomic pos
+tyCompareF (Or e1 e2 :&: pos)  = TypeChecker $ \ek cxt -> do
+  e1Ti <- runTypeChecker e1 ek cxt >>= expectAtomic pos
+  e2Ti <- runTypeChecker e2 ek cxt >>= expectAtomic pos
   sensCmpM pos e1Ti e2Ti
-tyCompareF (Neg e :&: pos) = TypeChecker $ \cxt -> do
-  runTypeChecker e cxt >>= expectAtomic pos >>= return . Atomic
+tyCompareF (Neg e :&: pos) = TypeChecker $ \ek cxt -> do
+  runTypeChecker e ek cxt >>= expectAtomic pos >>= return . Atomic
 
 instance TyAlg (ArithF :&: Pos) where
   tyAlg = tyArithF
@@ -629,9 +634,10 @@ typecheck :: Term (WithPos NSFuzziF1) (FuzziM ())
           -> Either SomeException (M.Map Name Sensitivity, ProbAnn, TermAnn, Double, Double)
 typecheck term initialCxt =
   let initialCxt' = M.map (\s -> Atomic $ ExprInfo (Sens s) D T 0) initialCxt
-      typeInfo = runCheckerMonad (runTypeChecker (typecheck' term) initialCxt' >>= expectAtomic (Pos Nothing)) empty
+      mainChecker = runTypeChecker (typecheck' term) Cmd initialCxt' >>= expectAtomic (Pos Nothing)
+      typeInfo = runCheckerMonad mainChecker empty
   in do
     ti <- typeInfo
     case ti of
-      CmdInfo cxt p t e d -> return (stripMacros cxt, p, t, e, d) 
+      CmdInfo cxt p t e d -> return (stripMacros cxt, p, t, e, d)
       _ -> throwTE (Pos Nothing) ExpectingACommand

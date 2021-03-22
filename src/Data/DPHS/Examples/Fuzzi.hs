@@ -44,7 +44,7 @@ i = v vi
 
 ex1 :: EmMon (Term (WithPos FuzziF)) FuzziM ()
 ex1 = do
-  vx .= laplace x 1.0 
+  vx .= laplace x 1.0
   vx .= laplace x 2.0
 
 namedEx1 :: FreshM m => m (Term (WithPos NFuzziF) (FuzziM ()))
@@ -81,9 +81,16 @@ classify x = toDeepRepr' $ if_ (x .> 100) (fromDeepRepr' $ 1.0) (fromDeepRepr' $
 namedEx4 :: FreshM m => m (Term (WithPos NFuzziF) (FuzziM ()))
 namedEx4 = toNamed ex4
 
+ex5 :: EmMon (Term (WithPos FuzziF)) FuzziM ()
+ex5 = do
+  ex4
+  vx .= bsum 1.0 ys
+
+namedEx5 :: FreshM m => m (Term (WithPos NFuzziF) (FuzziM ()))
+namedEx5 = toNamed ex5
+
 toNamed :: (Typeable a, FreshM m) => EmMon (Term (WithPos FuzziF)) FuzziM a -> m (Term (WithPos NFuzziF) (FuzziM a))
-toNamed =
-  getCompose . hxcata (hoasToNamedAlg @(WithPos FuzziF)) . xtoCxt . toDeepRepr'
+toNamed = getCompose . hxcata (hoasToNamedAlg @(WithPos FuzziF)) . xtoCxt . toDeepRepr'
 
 {-
 ex2 :: EmMon (Term FuzziF) FuzziM ()
