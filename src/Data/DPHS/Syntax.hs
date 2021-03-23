@@ -84,15 +84,45 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
 
 -- |Container types and operations.
 data ContainerF :: (* -> *) -> * -> * where
-  At :: ( Show (SNat i)
-        , Index i n
-        ) => r (Vec n a) -> SNat i -> ContainerF r a
+  VMake  :: Vec n a -> ContainerF r (Vec n a)
+  VCons  :: r a -> r (Vec n a) -> ContainerF r (Vec ('S n) a)
+  VIndex :: r (Vec n a) -> Fin n -> ContainerF r a
 
 $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
-          makeShowHF,
+          --makeShowHF,
           --makeEqHF, makeOrdHF,
           smartConstructors, smartAConstructors]
          [''ContainerF])
+
+instance
+  ( SyntacticPos lang a
+  , Typeable (DeepRepr' a)
+  , ContainerF :<: lang
+  , langPos ~ Annotate lang Pos
+  , ContainerF :&: Pos :<: Annotate lang Pos
+  , DistAnn lang Pos langPos
+  , SingNat n
+  ) => SyntacticPos lang (Vec n a) where
+  type DeepRepr' (Vec n a) = Vec n (DeepRepr' a)
+  toDeepRepr' Nil = iAVMake noPos Nil
+  toDeepRepr' (Cons x xs) =
+    case singNat @n of
+      SS (n' :: _ n') ->
+        withSingNat n' $
+        withBounded (SS n') $
+        iAVCons noPos (toDeepRepr' x) (toDeepRepr' xs)
+
+  fromDeepRepr' term =
+    case singNat @n of
+      SO -> Nil
+      SS (n' :: _ n') ->
+        withSingNat n' $
+        withBounded (SS n') $
+        let idxs = [minBound .. maxBound] :: [Fin n]
+        in case fromList @n $
+                  map (\idx -> iAVIndex noPos term idx) idxs of
+             Nothing -> error "impossible"
+             Just v -> fmap fromDeepRepr' v
 
 {-
 instance {-# OVERLAPPABLE #-}
