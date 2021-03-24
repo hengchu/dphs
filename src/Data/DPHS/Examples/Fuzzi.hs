@@ -17,7 +17,7 @@ import Data.DPHS.Fuzzi
 import Data.DPHS.Syntax
 import Data.DPHS.Syntactic
 
-vw, vx, vy, vz :: Typeable a => Variable a
+vw, vx, vy, vz :: Variable Double
 vw = V "w"
 vx = V "x"
 vy = V "y"
@@ -39,13 +39,13 @@ x = v vx
 y = v vy
 z = v vz
 
-xs :: Term (WithPos FuzziF) (FuzziM (Array Double))
+xs :: Term (WithPos FuzziF) (Array Double)
 xs = v vxs
 
-ys :: Term (WithPos FuzziF) (FuzziM (Bag Double))
+ys :: Term (WithPos FuzziF) (Bag Double)
 ys = v vys
 
-i :: Term (WithPos FuzziF) (FuzziM Int)
+i :: Term (WithPos FuzziF) Int
 i = v vi
 
 row :: Term (WithPos FuzziF) (Vec N5 Double)
@@ -61,9 +61,9 @@ namedEx1 = toNamed ex1
 
 ex2 :: EmMon (Term (WithPos FuzziF)) FuzziM ()
 ex2 = do
-  vi .= (0 :: Term (WithPos FuzziF) (FuzziM Int))
-  vx .= (1.0 :: Term (WithPos FuzziF) (FuzziM Double))
-  vy .= (1.0 :: Term (WithPos FuzziF) (FuzziM Double))
+  vi .= (0 :: Term (WithPos FuzziF) Int)
+  vx .= (1.0 :: Term (WithPos FuzziF) Double)
+  vy .= (1.0 :: Term (WithPos FuzziF) Double)
   while (i .< 100) $ do
     vw .= y
     vy .= x + y
@@ -84,8 +84,8 @@ ex4 :: EmMon (Term (WithPos FuzziF)) FuzziM ()
 ex4 = do
   vys .= bmap ys classify
 
-classify :: Term (WithPos FuzziF) (FuzziM Double) -> Term (WithPos FuzziF) (FuzziM Double)
-classify x = toDeepRepr' $ if_ (x .> 100) (fromDeepRepr' $ 1.0) (fromDeepRepr' $ -1.0)
+classify :: Term (WithPos FuzziF) Double -> Term (WithPos FuzziF) Double
+classify x = if_ (x .> 100) (fromDeepRepr' $ 1.0) (fromDeepRepr' $ -1.0)
 
 namedEx4 :: FreshM m => m (Term (WithPos NFuzziF) (FuzziM ()))
 namedEx4 = toNamed ex4
@@ -100,7 +100,7 @@ namedEx5 = toNamed ex5
 
 noiseSum :: Term (WithPos FuzziF) Double -> EmMon (Term (WithPos FuzziF)) FuzziM ()
 noiseSum entry = do
-  vx .= (0 :: _ (FuzziM Double))
+  vx .= (0 :: _ Double)
   vx .$= laplace entry 5.0
   vy .= (x + y)
 

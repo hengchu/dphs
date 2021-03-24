@@ -106,19 +106,19 @@ compareList []     (_:_)  = LT
 compareList (x:xs) (y:ys) = kcompare x y <> compareList xs ys
 
 data ExtensionF :: (* -> *) -> * -> * where
-  BMap :: r (FuzziM (Bag a))
-       -> r (FuzziM a -> FuzziM b)
-       -> ExtensionF r (FuzziM (Bag b))
+  BMap :: r (Bag a)
+       -> r (a -> b)
+       -> ExtensionF r (Bag b)
   BSum :: Double
-       -> r (FuzziM (Bag Double))
-       -> ExtensionF r (FuzziM Double)
-  AMap :: r (FuzziM (Array a))
-       -> r (FuzziM a -> FuzziM b)
-       -> ExtensionF r (FuzziM (Array b))
+       -> r (Bag Double)
+       -> ExtensionF r Double
+  AMap :: r (Array a)
+       -> r (a -> b)
+       -> ExtensionF r (Array b)
   Part :: Int
-       -> r (FuzziM (Bag a))
-       -> r (FuzziM a -> FuzziM Int)
-       -> ExtensionF r (FuzziM (Array (Bag a)))
+       -> r (Bag a)
+       -> r (a -> Int)
+       -> ExtensionF r (Array (Bag a))
 
   AdvComp :: Int           -- ^ total number of iterations
           -> Double        -- ^ omega
@@ -149,11 +149,11 @@ data EffF :: (* -> *) -> * -> * where
          => Variable a
          -> r (FuzziM a)
          -> EffF r (FuzziM ())
-  Branch :: r (FuzziM Bool)         -- ^ branch condition
-         -> r (FuzziM a)           -- ^ true branch statements
-         -> r (FuzziM a)           -- ^ false branch statements
-         -> EffF r (FuzziM a)
-  While  :: r (FuzziM Bool)         -- ^ loop condition
+  Branch :: r Bool                  -- ^ branch condition
+         -> r a                     -- ^ true branch statements
+         -> r a                     -- ^ false branch statements
+         -> EffF r a
+  While  :: r Bool                  -- ^ loop condition
          -> r (FuzziM ())           -- ^ loop body
          -> EffF r (FuzziM ())
 
@@ -295,17 +295,17 @@ noise lhs rhs =
   fromDeepRepr' $ iANoise (fromCallStack callStack) lhs rhs
 
 while :: HasCallStack
-      => Term (WithPos FuzziF) (FuzziM Bool)
+      => Term (WithPos FuzziF) Bool
       -> EmMon (Term (WithPos FuzziF)) FuzziM ()
       -> EmMon (Term (WithPos FuzziF)) FuzziM ()
 while cond body =
   fromDeepRepr' $ iAWhile (fromCallStack callStack) cond (toDeepRepr' body)
 
-if_ :: (HasCallStack, Typeable a)
-    => Term (WithPos FuzziF) (FuzziM Bool)
-    -> EmMon (Term (WithPos FuzziF)) FuzziM a
-    -> EmMon (Term (WithPos FuzziF)) FuzziM a
-    -> EmMon (Term (WithPos FuzziF)) FuzziM a
+if_ :: (HasCallStack, Typeable a, SyntacticPos FuzziF a)
+    => Term (WithPos FuzziF) Bool
+    -> a
+    -> a
+    -> a
 if_ cond ct cf =
   fromDeepRepr' $ iABranch (fromCallStack callStack) cond (toDeepRepr' ct) (toDeepRepr' cf)
 
@@ -347,22 +347,22 @@ laplace width center = iALaplace (fromCallStack callStack) width center
 
 bsum :: HasCallStack
      => Double
-     -> Term (WithPos FuzziF) (FuzziM (Bag Double))
-     -> Term (WithPos FuzziF) (FuzziM Double)
+     -> Term (WithPos FuzziF) (Bag Double)
+     -> Term (WithPos FuzziF) Double
 bsum clipBound bag = iABSum (fromCallStack callStack) clipBound bag
 
 bmap :: forall a b.
         (Typeable a, Typeable b, HasCallStack)
-     => Term (WithPos FuzziF) (FuzziM (Bag a))
-     -> (Term (WithPos FuzziF) (FuzziM a) -> Term (WithPos FuzziF) (FuzziM b))
-     -> Term (WithPos FuzziF) (FuzziM (Bag b))
+     => Term (WithPos FuzziF) (Bag a)
+     -> (Term (WithPos FuzziF) a -> Term (WithPos FuzziF) b)
+     -> Term (WithPos FuzziF) (Bag b)
 bmap input f = iABMap (fromCallStack callStack) input (toDeepRepr' f)
 
 amap :: forall a b.
         (Typeable a, Typeable b, HasCallStack)
-     => Term (WithPos FuzziF) (FuzziM (Array a))
-     -> (Term (WithPos FuzziF) (FuzziM a) -> Term (WithPos FuzziF) (FuzziM b))
-     -> Term (WithPos FuzziF) (FuzziM (Array b))
+     => Term (WithPos FuzziF) (Array a)
+     -> (Term (WithPos FuzziF) a -> Term (WithPos FuzziF) b)
+     -> Term (WithPos FuzziF) (Array b)
 amap input f = iAAMap (fromCallStack callStack) input (toDeepRepr' f)
 
 ac :: HasCallStack
