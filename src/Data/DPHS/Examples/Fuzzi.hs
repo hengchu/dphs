@@ -53,8 +53,8 @@ row = Term $ injectA noPos (inj $ XVar vrow)
 
 ex1 :: EmMon (Term (WithPos FuzziF)) FuzziM ()
 ex1 = do
-  vx .= laplace x 1.0
-  vx .= laplace x 2.0
+  vx .$= laplace x 1.0
+  vx .$= laplace x 2.0
 
 namedEx1 :: FreshM m => m (Term (WithPos NFuzziF) (FuzziM ()))
 namedEx1 = toNamed ex1
@@ -101,7 +101,7 @@ namedEx5 = toNamed ex5
 noiseSum :: Term (WithPos FuzziF) (FuzziM Double) -> EmMon (Term (WithPos FuzziF)) FuzziM ()
 noiseSum entry = do
   vx .= (0 :: _ (FuzziM Double))
-  vx .= laplace entry 5.0
+  vx .$= laplace entry 5.0
   vy .= (x + y)
 
 ex6 :: EmMon (Term (WithPos FuzziF)) FuzziM ()
@@ -111,4 +111,3 @@ ex6 = do
 
 toNamed :: (Typeable a, FreshM m) => EmMon (Term (WithPos FuzziF)) FuzziM a -> m (Term (WithPos NFuzziF) (FuzziM a))
 toNamed = getCompose . hxcata (hoasToNamedAlg @(WithPos FuzziF)) . xtoCxt . toDeepRepr'
-

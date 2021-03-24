@@ -153,6 +153,7 @@ data TypeError =
   | ExpectingNestedChecker
   | NotExpectingNestedChecker
   | ExpectingDeterminism
+  | ExpectingRandomness
   | ExpectingZeroEpsilon
   | ExpectingZeroDelta
   | ExpectingZeroSensitivity
@@ -284,14 +285,20 @@ tyEffF :: MonadThrow m => Alg (EffF :&: Pos) (TypeChecker m)
 tyEffF (Assign (V x) rhs :&: pos) = TypeChecker $ \_ek cxt -> do
   rhsTi <- runTypeChecker rhs Expr cxt >>= expectAtomic pos
   case rhsTi of
-    ExprInfo s P t eps -> do
-      when (not $ isNonSensitive s) $ throwTE pos ExpectingZeroSensitivity
-      let cxt' = M.insert x (Atomic $ ExprInfo (Sens 0) D T 0) cxt
-      (return . Atomic) $ CmdInfo cxt' P t eps 0
-    ExprInfo s D t eps -> do
+    ExprInfo s p t eps -> do
       when (eps /= 0) $ throwTE pos ExpectingZeroEpsilon
+      when (p /= D) $ throwTE pos ExpectingDeterminism
       let cxt' = M.insert x (Atomic $ ExprInfo s D T 0) cxt
       (return . Atomic) $ CmdInfo cxt' D t 0 0
+    CmdInfo{} -> throwTE pos ExpectingAnExpression
+tyEffF (Noise (V x) rhs :&: pos) = TypeChecker $ \_ek cxt -> do
+  rhsTi <- runTypeChecker rhs Expr cxt >>= expectAtomic pos
+  case rhsTi of
+    ExprInfo s p t eps -> do
+      when (not $ isNonSensitive s) $ throwTE pos ExpectingZeroSensitivity
+      when (p /= P) $ throwTE pos ExpectingRandomness
+      let cxt' = M.insert x (Atomic $ ExprInfo (Sens 0) D T 0) cxt
+      (return . Atomic) $ CmdInfo cxt' P t eps 0
     CmdInfo{} -> throwTE pos ExpectingAnExpression
 tyEffF (Branch e c1 c2 :&: pos) = TypeChecker $ \ek cxt -> do
   eTi <- runTypeChecker e Expr cxt >>= expectAtomic pos

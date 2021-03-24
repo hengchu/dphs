@@ -34,21 +34,21 @@ data ExprF :: (* -> *) -> * -> * where
   -- |Dereference a variable.
   Deref :: Typeable a
         => Variable a
-        -> ExprF r (FuzziM a)
+        -> ExprF r a
 
   -- |Index into an array.
-  Index :: r (FuzziM (Array a))
-        -> r (FuzziM Int)
-        -> ExprF r (FuzziM a)
+  Index :: r (Array a)
+        -> r Int
+        -> ExprF r a
 
   -- |Resize an array.
-  Resize :: r (FuzziM (Array a))
-         -> r (FuzziM Int)
-         -> ExprF r (FuzziM (Array a))
+  Resize :: r (Array a)
+         -> r Int
+         -> ExprF r (Array a)
 
   -- |Literal array value.
-  ArrLit :: [r (FuzziM a)]
-         -> ExprF r (FuzziM (Array a))
+  ArrLit :: [r a]
+         -> ExprF r (Array a)
 
 $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
           smartConstructors, smartAConstructors]
@@ -143,7 +143,11 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
 data EffF :: (* -> *) -> * -> * where
   Assign :: Typeable a
          => Variable a              -- ^ the variable to be assigned to
-         -> r (FuzziM a)            -- ^ the rhs expression to assign to the lhs
+         -> r a                     -- ^ the rhs expression to assign to the lhs
+         -> EffF r (FuzziM ())
+  Noise  :: Typeable a
+         => Variable a
+         -> r (FuzziM a)
          -> EffF r (FuzziM ())
   Branch :: r (FuzziM Bool)         -- ^ branch condition
          -> r (FuzziM a)           -- ^ true branch statements
@@ -160,11 +164,16 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
 
 instance ShowHF EffF where
   showHF (Assign (V var) rhs) = K (printf "%s = %s" (show var) (unK rhs))
+  showHF (Noise (V var) rhs) = K (printf "%s $= %s" (show var) (unK rhs))
   showHF (Branch cond c1 c2) = K (printf "if %s then %s else %s end" (unK cond) (unK c1) (unK c2))
   showHF (While cond c) = K (printf "while %s do %s end" (unK cond) (unK c))
 
 instance EqHF EffF where
   eqHF (Assign (v1 :: Variable a1) rhs1) (Assign (v2 :: Variable a2) rhs2) =
+    case eqTypeRep (typeRep @a1) (typeRep @a2) of
+      Just HRefl -> v1 == v2 && keq rhs1 rhs2
+      Nothing -> False
+  eqHF (Noise (v1 :: Variable a1) rhs1) (Noise (v2 :: Variable a2) rhs2) =
     case eqTypeRep (typeRep @a1) (typeRep @a2) of
       Just HRefl -> v1 == v2 && keq rhs1 rhs2
       Nothing -> False
@@ -183,12 +192,24 @@ instance OrdHF EffF where
           tr2 = typeRep @a2
   compareHF Assign{} _ = LT
 
+  compareHF Noise{} Assign{} = GT
+  compareHF (Noise (v1 :: Variable a1) rhs1) (Noise (v2 :: Variable a2) rhs2) =
+    case eqTypeRep tr1 tr2 of
+      Just HRefl -> compare v1 v2 <> kcompare rhs1 rhs2
+      Nothing -> compare (SomeTypeRep tr1) (SomeTypeRep tr2)
+    where tr1 = typeRep @a1
+          tr2 = typeRep @a2
+  compareHF Noise{} _ = LT
+
+
   compareHF Branch{} Assign{} = GT
+  compareHF Branch{} Noise{} = GT
   compareHF (Branch cond1 c11 c21) (Branch cond2 c12 c22) =
     kcompare cond1 cond2 <> kcompare c11 c12 <> kcompare c21 c22
   compareHF Branch{} _ = LT
 
   compareHF While{} Assign{} = GT
+  compareHF While{} Noise{} = GT
   compareHF While{} Branch{} = GT
   compareHF (While cond1 c1) (While cond2 c2) =
     kcompare cond1 cond2 <> kcompare c1 c2
@@ -260,10 +281,18 @@ type NSFuzziF1 = ArithF :+: CompareF :+: ExprF
 assign :: forall a.
           (HasCallStack, Typeable a)
        => Variable a
-       -> Term (WithPos FuzziF) (FuzziM a)
+       -> Term (WithPos FuzziF) a
        -> EmMon (Term (WithPos FuzziF)) FuzziM ()
 assign lhs rhs =
   fromDeepRepr' $ iAAssign (fromCallStack callStack) lhs rhs
+
+noise :: forall a.
+          (HasCallStack, Typeable a)
+       => Variable a
+       -> Term (WithPos FuzziF) (FuzziM a)
+       -> EmMon (Term (WithPos FuzziF)) FuzziM ()
+noise lhs rhs =
+  fromDeepRepr' $ iANoise (fromCallStack callStack) lhs rhs
 
 while :: HasCallStack
       => Term (WithPos FuzziF) (FuzziM Bool)
@@ -280,27 +309,35 @@ if_ :: (HasCallStack, Typeable a)
 if_ cond ct cf =
   fromDeepRepr' $ iABranch (fromCallStack callStack) cond (toDeepRepr' ct) (toDeepRepr' cf)
 
-v :: (Typeable a, HasCallStack) => Variable a -> Term (WithPos FuzziF) (FuzziM a)
+v :: (Typeable a, HasCallStack) => Variable a -> Term (WithPos FuzziF) a
 v = iADeref (fromCallStack callStack)
 
-vn :: (Typeable a, HasCallStack) => Name -> Term (WithPos FuzziF) (FuzziM a)
+vn :: (Typeable a, HasCallStack) => Name -> Term (WithPos FuzziF) a
 vn = v . V
 
 infixl 9 .!!
 (.!!) :: forall a.
          HasCallStack
-      => Term (WithPos FuzziF) (FuzziM (Array a))
-      -> Term (WithPos FuzziF) (FuzziM Int)
-      -> Term (WithPos FuzziF) (FuzziM a)
+      => Term (WithPos FuzziF) (Array a)
+      -> Term (WithPos FuzziF) Int
+      -> Term (WithPos FuzziF) a
 (.!!) = iAIndex (fromCallStack callStack)
 
 infix 4 .=
 (.=) :: forall a.
         (HasCallStack, Typeable a)
      => Variable a
-     -> Term (WithPos FuzziF) (FuzziM a)
+     -> Term (WithPos FuzziF) a
      -> EmMon (Term (WithPos FuzziF)) FuzziM ()
 (.=) = assign
+
+infix 4 .$=
+(.$=) :: forall a.
+         (HasCallStack, Typeable a)
+      => Variable a
+      -> Term (WithPos FuzziF) (FuzziM a)
+      -> EmMon (Term (WithPos FuzziF)) FuzziM ()
+(.$=) = noise
 
 laplace :: HasCallStack
         => Term (WithPos FuzziF) (FuzziM Double)
@@ -455,6 +492,8 @@ instance
   nfuzziPos ~ WithPos NFuzziF => HOASToNamed (EffF :&: Pos) nfuzziPos where
   hoasToNamedAlg (Assign lhs rhs :&: pos) =
     Compose $ iAAssign pos <$> pure lhs <*> getCompose rhs
+  hoasToNamedAlg (Noise lhs rhs :&: pos) =
+    Compose $ iANoise pos <$> pure lhs <*> getCompose rhs
   hoasToNamedAlg (Branch cond t f :&: pos) =
     Compose $ iABranch pos <$> getCompose cond <*> getCompose t <*> getCompose f
   hoasToNamedAlg (While cond body :&: pos) =
