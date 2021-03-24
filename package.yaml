@@ -26,10 +26,12 @@ dependencies:
 - optics >= 0.3 && < 1.0
 - containers >= 0.6.2.1 && < 1.0
 - exceptions >= 0.10.4 && < 1.0
-- mtl >= 2.2.2 && < 2.3
+- mtl >= 2.1 && < 2.3
 
 ghc-options:
 - -Wall
+- -Wno-partial-type-signatures
+- -Wno-name-shadowing
 - -fwarn-tabs
 - -fwarn-incomplete-uni-patterns
 - -fwarn-incomplete-record-updates
@@ -101,3 +103,47 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - dphs
+    - hspec >= 2.7.4 && < 2.8
+    - hspec-expectations >= 0.8.2 && < 0.9
+    - QuickCheck >= 2.13.2 && < 2.14
+    default-extensions:
+    - DataKinds
+    - DeriveGeneric
+    - DuplicateRecordFields
+    - FlexibleContexts
+    - TypeApplications
+    - DeriveFunctor
+    - DeriveFoldable
+    - DeriveTraversable
+    - TypeOperators
+    - ApplicativeDo
+    - LambdaCase
+    - GeneralizedNewtypeDeriving
+    - TypeFamilies
+    - ScopedTypeVariables
+    - RankNTypes
+    - FlexibleInstances
+    - DeriveDataTypeable
+    - QuasiQuotes
+    - TemplateHaskell
+    - ConstraintKinds
+    - UndecidableInstances
+    - MultiParamTypeClasses
+    - KindSignatures
+    - FunctionalDependencies
+    - DataKinds
+    - GADTs
+    - StandaloneDeriving
+    - ViewPatterns
+    - CPP
+    - PartialTypeSignatures
+    - PolyKinds
+    - QuantifiedConstraints
+    - DerivingVia
+    - BangPatterns
+    - PatternSynonyms
+    - DuplicateRecordFields
+    - OverloadedLabels
+    - LambdaCase
+    - TypeFamilyDependencies
+    - OverloadedStrings

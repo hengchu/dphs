@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 73631c35209053f077f19956663205fba11493996618df3454a773c9594bfe83
+-- hash: d18903a615e11c6a3bb0a1af8e451d73d3b899fe6d29c95179e42ea4d70bbdab
 
 name:           dphs
 version:        0.1.0.0
@@ -28,6 +28,7 @@ source-repository head
 library
   exposed-modules:
       Data.DPHS.Algebra
+      Data.DPHS.Error
       Data.DPHS.Examples.Fuzzi
       Data.DPHS.Fuzzi
       Data.DPHS.HXFunctor
@@ -43,13 +44,13 @@ library
   hs-source-dirs:
       src
   default-extensions: DataKinds DeriveGeneric DuplicateRecordFields FlexibleContexts TypeApplications DeriveFunctor DeriveFoldable DeriveTraversable TypeOperators ApplicativeDo LambdaCase GeneralizedNewtypeDeriving TypeFamilies ScopedTypeVariables RankNTypes FlexibleInstances DeriveDataTypeable QuasiQuotes TemplateHaskell ConstraintKinds UndecidableInstances MultiParamTypeClasses KindSignatures FunctionalDependencies DataKinds GADTs StandaloneDeriving ViewPatterns CPP PartialTypeSignatures PolyKinds QuantifiedConstraints DerivingVia BangPatterns PatternSynonyms DuplicateRecordFields OverloadedLabels LambdaCase TypeFamilyDependencies OverloadedStrings
-  ghc-options: -Wall -fwarn-tabs -fwarn-incomplete-uni-patterns -fwarn-incomplete-record-updates -optP-Wno-nonportable-include-path
+  ghc-options: -Wall -Wno-partial-type-signatures -Wno-name-shadowing -fwarn-tabs -fwarn-incomplete-uni-patterns -fwarn-incomplete-record-updates -optP-Wno-nonportable-include-path
   build-depends:
       base >=4.8 && <5
     , compdata >=0.12 && <1.0
     , containers >=0.6.2.1 && <1.0
     , exceptions >=0.10.4 && <1.0
-    , mtl >=2.2.2 && <2.3
+    , mtl >=2.1 && <2.3
     , optics >=0.3 && <1.0
     , text >=1.2.4.0 && <1.3
   default-language: Haskell2010
@@ -60,14 +61,14 @@ executable dphs-exe
       Paths_dphs
   hs-source-dirs:
       app
-  ghc-options: -Wall -fwarn-tabs -fwarn-incomplete-uni-patterns -fwarn-incomplete-record-updates -optP-Wno-nonportable-include-path -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wno-partial-type-signatures -Wno-name-shadowing -fwarn-tabs -fwarn-incomplete-uni-patterns -fwarn-incomplete-record-updates -optP-Wno-nonportable-include-path -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.8 && <5
     , compdata >=0.12 && <1.0
     , containers >=0.6.2.1 && <1.0
     , dphs
     , exceptions >=0.10.4 && <1.0
-    , mtl >=2.2.2 && <2.3
+    , mtl >=2.1 && <2.3
     , optics >=0.3 && <1.0
     , text >=1.2.4.0 && <1.3
   default-language: Haskell2010
@@ -79,14 +80,18 @@ test-suite dphs-test
       Paths_dphs
   hs-source-dirs:
       test
-  ghc-options: -Wall -fwarn-tabs -fwarn-incomplete-uni-patterns -fwarn-incomplete-record-updates -optP-Wno-nonportable-include-path -threaded -rtsopts -with-rtsopts=-N
+  default-extensions: DataKinds DeriveGeneric DuplicateRecordFields FlexibleContexts TypeApplications DeriveFunctor DeriveFoldable DeriveTraversable TypeOperators ApplicativeDo LambdaCase GeneralizedNewtypeDeriving TypeFamilies ScopedTypeVariables RankNTypes FlexibleInstances DeriveDataTypeable QuasiQuotes TemplateHaskell ConstraintKinds UndecidableInstances MultiParamTypeClasses KindSignatures FunctionalDependencies DataKinds GADTs StandaloneDeriving ViewPatterns CPP PartialTypeSignatures PolyKinds QuantifiedConstraints DerivingVia BangPatterns PatternSynonyms DuplicateRecordFields OverloadedLabels LambdaCase TypeFamilyDependencies OverloadedStrings
+  ghc-options: -Wall -Wno-partial-type-signatures -Wno-name-shadowing -fwarn-tabs -fwarn-incomplete-uni-patterns -fwarn-incomplete-record-updates -optP-Wno-nonportable-include-path -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.8 && <5
+      QuickCheck >=2.13.2 && <2.14
+    , base >=4.8 && <5
     , compdata >=0.12 && <1.0
     , containers >=0.6.2.1 && <1.0
     , dphs
     , exceptions >=0.10.4 && <1.0
-    , mtl >=2.2.2 && <2.3
+    , hspec >=2.7.4 && <2.8
+    , hspec-expectations >=0.8.2 && <0.9
+    , mtl >=2.1 && <2.3
     , optics >=0.3 && <1.0
     , text >=1.2.4.0 && <1.3
   default-language: Haskell2010

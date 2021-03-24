@@ -1,13 +1,15 @@
 {-# OPTIONS_GHC -Wno-unused-do-bind #-}
 module Data.DPHS.Examples.Fuzzi where
 
+import Control.Monad
 import Data.Functor.Compose
 import Type.Reflection
 
 import Data.Comp.Multi.Term
-import Data.Comp.Multi.Algebra
 import Data.Comp.Multi.Annotation
+import Data.Comp.Multi
 
+import Data.DPHS.Types
 import Data.DPHS.SrcLoc
 import Data.DPHS.HXFunctor
 import Data.DPHS.Name
@@ -15,41 +17,98 @@ import Data.DPHS.Fuzzi
 import Data.DPHS.Syntax
 import Data.DPHS.Syntactic
 
-x :: Typeable a => Variable a
-x = V "x"
+vw, vx, vy, vz :: Typeable a => Variable a
+vw = V "w"
+vx = V "x"
+vy = V "y"
+vz = V "z"
 
-xx :: Term (WithPos FuzziF) (FuzziM Double)
-xx = v x
+vxs, vys :: Typeable a => Variable a
+vxs = V "xs"
+vys = V "ys"
+
+vi :: Typeable a => Variable a
+vi = V "i"
+
+vrow :: Typeable a => Variable a
+vrow = V "row"
+
+w, x, y, z :: Term (WithPos FuzziF) (FuzziM Double)
+w = v vw
+x = v vx
+y = v vy
+z = v vz
+
+xs :: Term (WithPos FuzziF) (FuzziM (Array Double))
+xs = v vxs
+
+ys :: Term (WithPos FuzziF) (FuzziM (Bag Double))
+ys = v vys
+
+i :: Term (WithPos FuzziF) (FuzziM Int)
+i = v vi
+
+row :: Term (WithPos FuzziF) (Vec N5 (FuzziM Double))
+row = Term $ injectA noPos (inj $ XVar vrow)
 
 ex1 :: EmMon (Term (WithPos FuzziF)) FuzziM ()
 ex1 = do
-  v @Double (V "x") .= laplace 1.0 xx
-  v @Double (V "x") .= laplace xx 0.0
-
-deepEx1 :: Term (WithPos FuzziF) (FuzziM ())
-deepEx1 = toDeepRepr' ex1
+  vx .= laplace x 1.0
+  vx .= laplace x 2.0
 
 namedEx1 :: FreshM m => m (Term (WithPos NFuzziF) (FuzziM ()))
-namedEx1 = getCompose $ hxcata (hoasToNamedAlg @(WithPos FuzziF)) (xtoCxt deepEx1)
+namedEx1 = toNamed ex1
 
-{-
-ex2 :: EmMon (Term FuzziF) FuzziM ()
+ex2 :: EmMon (Term (WithPos FuzziF)) FuzziM ()
 ex2 = do
-  if_ (xx .> 5)
-      ex1
-      (do xx .= 2.0 * laplace 1.0 0.0)
+  vi .= (0 :: Term (WithPos FuzziF) (FuzziM Int))
+  vx .= (1.0 :: Term (WithPos FuzziF) (FuzziM Double))
+  vy .= (1.0 :: Term (WithPos FuzziF) (FuzziM Double))
+  while (i .< 100) $ do
+    vw .= y
+    vy .= x + y
+    vx .= w
+    vi .= i + 1
 
-ex3 :: EmMon (Term FuzziF) FuzziM ()
+namedEx2 :: FreshM m => m (Term (WithPos NFuzziF) (FuzziM ()))
+namedEx2 = toNamed ex2
+
+ex3 :: EmMon (Term (WithPos FuzziF)) FuzziM ()
 ex3 = do
-  while (xx ./= 0.0) $ do
-    xx .= laplace 1.0 0.0
+  vxs .= amap xs (\x -> 2 * x)
 
-ex4 :: EmMon (Term FuzziF) FuzziM ()
+namedEx3 :: FreshM m => m (Term (WithPos NFuzziF) (FuzziM ()))
+namedEx3 = toNamed ex3
+
+ex4 :: EmMon (Term (WithPos FuzziF)) FuzziM ()
 ex4 = do
-  y .= 0
-  ac (V "y") 100 $ do
-    if_ (xx .> 100)
-      (xx .= laplace 1.0 0.0)
-      (xx .= laplace 2.0 0.0)
-  where y = v @Int (V "y")
--}
+  vys .= bmap ys classify
+
+classify :: Term (WithPos FuzziF) (FuzziM Double) -> Term (WithPos FuzziF) (FuzziM Double)
+classify x = toDeepRepr' $ if_ (x .> 100) (fromDeepRepr' $ 1.0) (fromDeepRepr' $ -1.0)
+
+namedEx4 :: FreshM m => m (Term (WithPos NFuzziF) (FuzziM ()))
+namedEx4 = toNamed ex4
+
+ex5 :: EmMon (Term (WithPos FuzziF)) FuzziM ()
+ex5 = do
+  ex4
+  vx .= bsum 1.0 ys
+
+namedEx5 :: FreshM m => m (Term (WithPos NFuzziF) (FuzziM ()))
+namedEx5 = toNamed ex5
+
+noiseSum :: Term (WithPos FuzziF) (FuzziM Double) -> EmMon (Term (WithPos FuzziF)) FuzziM ()
+noiseSum entry = do
+  vx .= (0 :: _ (FuzziM Double))
+  vx .= laplace entry 5.0
+  vy .= (x + y)
+
+ex6 :: EmMon (Term (WithPos FuzziF)) FuzziM ()
+ex6 = do
+  let entries = toList (fromDeepRepr' row)
+  forMon_ entries noiseSum
+
+toNamed :: (Typeable a, FreshM m) => EmMon (Term (WithPos FuzziF)) FuzziM a -> m (Term (WithPos NFuzziF) (FuzziM a))
+toNamed = getCompose . hxcata (hoasToNamedAlg @(WithPos FuzziF)) . xtoCxt . toDeepRepr'
+

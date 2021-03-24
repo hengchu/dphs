@@ -1,12 +1,15 @@
 {-# OPTIONS_GHC -Wno-missing-signatures -Wno-orphans #-}
+{-# LANGUAGE InstanceSigs #-}
 
 module Data.DPHS.Syntax where
 
 import Type.Reflection hiding (App)
 import Data.Functor.Compose
 import GHC.Stack
+import qualified Data.Foldable as Foldable
 
 import Data.DPHS.Name
+import Data.DPHS.Types
 import Data.DPHS.HXFunctor
 import Data.DPHS.Syntactic
 import Data.DPHS.SrcLoc
@@ -80,6 +83,85 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
           makeShowHF, makeEqHF, makeOrdHF,
           smartConstructors, smartAConstructors]
          [''ArithF])
+
+-- |Container types and operations.
+data ContainerF :: (* -> *) -> * -> * where
+  VNil   :: ContainerF r (Vec 'O a)
+  VCons  :: r a -> r (Vec n a) -> ContainerF r (Vec ('S n) a)
+  VIndex :: r (Vec n a) -> Fin n -> ContainerF r a
+
+iVNil :: ContainerF :<: f => Cxt h f x (Vec 'O a)
+iVNil = inject VNil
+
+iAVNil :: (ContainerF :<: s,
+           DistAnn s p f) => p -> Cxt h f x (Vec 'O a)
+iAVNil p = Term (injectA p (inj VNil))
+
+iVCons :: ContainerF :<: f => Cxt h f x a -> Cxt h f x (Vec n a) -> Cxt h f x (Vec ('S n) a)
+iVCons hd tl = inject (VCons hd tl)
+
+iAVCons :: ( ContainerF :<: s
+           , DistAnn s p f)
+        => p -> Cxt h f x a -> Cxt h f x (Vec n a) -> Cxt h f x (Vec ('S n) a)
+iAVCons p hd tl = Term (injectA p (inj (VCons hd tl)))
+
+iVIndex :: ContainerF :<: f => Cxt h f x (Vec n a) -> Fin n -> Cxt h f x a
+iVIndex v i = inject (VIndex v i)
+
+iAVIndex :: ( ContainerF :<: s
+            , DistAnn s p f
+            ) => p -> Cxt h f x (Vec n a) -> Fin n -> Cxt h f x a
+iAVIndex p v i = Term (injectA p (inj (VIndex v i)))
+
+$(derive [makeHFunctor, makeHFoldable, makeHTraversable,
+          makeShowHF
+          --makeEqHF, makeOrdHF
+          --smartConstructors, smartAConstructors
+         ]
+         [''ContainerF])
+
+instance
+  ( SyntacticPos lang a
+  , Typeable (DeepRepr' a)
+  , ContainerF :<: lang
+  , langPos ~ Annotate lang Pos
+  , ContainerF :&: Pos :<: Annotate lang Pos
+  , DistAnn lang Pos langPos
+  , SingNat n
+  ) => SyntacticPos lang (Vec n a) where
+  type DeepRepr' (Vec n a) = Vec n (DeepRepr' a)
+  toDeepRepr' Nil = iAVNil noPos
+  toDeepRepr' (Cons x xs) =
+    case singNat @n of
+      SS n' ->
+        withSingNat n' $
+        withBounded (singNat @n) $
+        iAVCons noPos (toDeepRepr' x) (toDeepRepr' xs)
+
+  --fromDeepRepr' :: Term (Annotate h Pos) (DeepRepr' (Vec n a)) -> Vec n a
+  fromDeepRepr' term =
+    case singNat @n of
+      SO -> Nil
+      SS n' ->
+        withSingNat n' $
+        withBounded (singNat @n) $
+        let idxs = [minBound .. maxBound] :: [Fin n]
+        in case fromList @n $
+                  map (\idx -> iAVIndex noPos term idx) idxs of
+             Nothing -> error "impossible"
+             Just v -> fmap fromDeepRepr' v
+
+instance {-# OVERLAPPING #-}
+  ( ContainerF :<: tgt
+  , ContainerF :&: Pos :<: WithPos tgt
+  , tgtPos ~ WithPos tgt
+  , DistAnn tgt Pos tgtPos
+  ) => HOASToNamed (ContainerF :&: Pos) tgtPos where
+  hoasToNamedAlg (VNil :&: pos) = Compose . return $ iAVNil pos
+  hoasToNamedAlg (VCons hd tl :&: pos) =
+    Compose $ iAVCons pos <$> getCompose hd <*> getCompose tl
+  hoasToNamedAlg (VIndex v i :&: pos) =
+    Compose $ iAVIndex pos <$> getCompose v <*> pure i
 
 {-
 instance {-# OVERLAPPABLE #-}
@@ -191,8 +273,8 @@ instance {-# OVERLAPPING #-}
 
 -- |Embedded monadic syntax.
 data MonadF :: (* -> *) -> * -> * where
-  Bind :: (Monad m, Typeable a) => r (m a) -> r (a -> m b) -> MonadF r (m b)
-  Ret  :: Monad m => r a -> MonadF r (m a)
+  Bind :: (Monad m, Typeable m, Typeable a, Typeable b) => r (m a) -> r (a -> m b) -> MonadF r (m b)
+  Ret  :: (Monad m, Typeable m) => r a -> MonadF r (m a)
 
 $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
           makeShowHF, makeEqHF, makeOrdHF,
@@ -217,7 +299,7 @@ instance
     Compose $ iABind pos <$> getCompose ma <*> getCompose kont
   hoasToNamedAlg (Ret a :&: pos) =
     Compose $ iARet pos <$> getCompose a
-
+  
 instance Syntactic (Cxt hole lang f) (Cxt hole lang f a) where
   type DeepRepr (Cxt hole lang f a) = a
   toDeepRepr = id
@@ -260,8 +342,8 @@ instance
 
 -- |Embedded lambda calculus.
 data XLambdaF :: (* -> *) -> * -> * where
-  XLam :: Typeable a => (r a -> r b) -> XLambdaF r (a -> b)
-  XApp :: Typeable a => r (a -> b) -> r a -> XLambdaF r b
+  XLam :: (Typeable a, Typeable b) => (r a -> r b) -> XLambdaF r (a -> b)
+  XApp :: (Typeable a, Typeable b) => r (a -> b) -> r a -> XLambdaF r b
   XVar :: Typeable a => Variable a -> XLambdaF r a
 
 instance HXFunctor XLambdaF where
@@ -295,8 +377,8 @@ instance
 
 -- |Named lambda calculus representation.
 data LambdaF :: (* -> *) -> * -> * where
-  Lam :: Typeable a => Variable a -> r b -> LambdaF r (a -> b)
-  App :: Typeable a => r (a -> b) -> r a -> LambdaF r b
+  Lam :: (Typeable a, Typeable b) => Variable a -> r b -> LambdaF r (a -> b)
+  App :: (Typeable a, Typeable b) => r (a -> b) -> r a -> LambdaF r b
   Var :: Typeable a => Variable a -> LambdaF r a
 
 instance EqHF LambdaF where
@@ -487,3 +569,69 @@ instance SynOrd Integer where
   (.<=) = (<=)
   (.>)  = (>)
   (.>=) = (>=)
+
+data Progress a = Done a | Worked a
+
+unprogress :: Progress a -> a
+unprogress (Done a) = a
+unprogress (Worked a) = a
+
+removeBindRetImpl ::
+  forall h a.
+  ( MonadF :&: Pos :<: h
+  , LambdaF :&: Pos :<: h
+  ) =>
+  h (Term h) a -> Progress (h (Term h) a)
+removeBindRetImpl term@(proj @(MonadF :&: Pos) -> Just (Bind m (f :: _ (x -> my)) :&: _)) =
+  case proj @(LambdaF :&: Pos) (unTerm f) of
+    Just (Lam ((V x) :: _ xx) body :&: _) ->
+      case proj @(MonadF :&: Pos) (unTerm body) of
+        Just (Ret r :&: _) ->
+          case proj @(LambdaF :&: Pos) (unTerm r) of
+            Just (Var ((V x') :: _ xx') :&: _) ->
+              case eqTypeRep (typeRep @xx) (typeRep @xx') of
+                Just HRefl -> if x == x' then Worked (unTerm m) else Done term
+                _ -> Done term
+            _ -> Done term
+        _ -> Done term
+    _ -> Done term
+removeBindRetImpl term = Done term
+
+removeBindRet :: forall h a.
+  ( HFunctor h
+  , MonadF :&: Pos :<: h
+  , LambdaF :&: Pos :<: h
+  ) => h (Compose Progress (Term h)) a -> Compose Progress (Term h) a
+removeBindRet term =
+  case removeBindRetImpl . hfmap (unprogress . getCompose) $ term of
+    Worked t -> Compose . Worked . Term $ t
+    Done t -> Compose . Done . Term $ t
+
+removeBindRetStep :: forall h a.
+  ( HFunctor h
+  , MonadF :&: Pos :<: h
+  , LambdaF :&: Pos :<: h
+  ) => Term h a -> Progress (Term h a)
+removeBindRetStep = getCompose . cata removeBindRet
+
+removeAllBindRet :: forall h a.
+  ( HFunctor h
+  , MonadF :&: Pos :<: h
+  , LambdaF :&: Pos :<: h
+  ) => Term h a -> Term h a
+removeAllBindRet = untilConvergence removeBindRetStep
+  
+untilConvergence :: (a -> Progress a) -> (a -> a)
+untilConvergence f a =
+  case f a of
+    Worked a -> untilConvergence f a
+    Done a -> a
+
+forMon_ :: Foldable t => t (lang a) -> (lang a -> EmMon lang m ()) -> EmMon lang m ()
+forMon_ container f =
+  case Foldable.toList container of
+    -- TODO: a better way to handle this is to create a term that has
+    -- the unit type in the language.
+    [] -> error "forMon_: empty container"
+    [x] -> f x
+    (x:xs) -> f x >> forMon_ xs f
