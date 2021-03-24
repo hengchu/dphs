@@ -131,7 +131,7 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
          [''ExtensionF])
 
 data PrivMechF :: (* -> *) -> * -> * where
-  Laplace :: r (FuzziM Double)
+  Laplace :: r Double
           -> Double
           -> PrivMechF r (FuzziM Double)
 
@@ -340,7 +340,7 @@ infix 4 .$=
 (.$=) = noise
 
 laplace :: HasCallStack
-        => Term (WithPos FuzziF) (FuzziM Double)
+        => Term (WithPos FuzziF) Double
         -> Double
         -> Term (WithPos FuzziF) (FuzziM Double)
 laplace width center = iALaplace (fromCallStack callStack) width center

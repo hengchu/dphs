@@ -33,7 +33,7 @@ vi = V "i"
 vrow :: Typeable a => Variable a
 vrow = V "row"
 
-w, x, y, z :: Term (WithPos FuzziF) (FuzziM Double)
+w, x, y, z :: Term (WithPos FuzziF) Double
 w = v vw
 x = v vx
 y = v vy
@@ -48,7 +48,7 @@ ys = v vys
 i :: Term (WithPos FuzziF) (FuzziM Int)
 i = v vi
 
-row :: Term (WithPos FuzziF) (Vec N5 (FuzziM Double))
+row :: Term (WithPos FuzziF) (Vec N5 Double)
 row = Term $ injectA noPos (inj $ XVar vrow)
 
 ex1 :: EmMon (Term (WithPos FuzziF)) FuzziM ()
@@ -98,7 +98,7 @@ ex5 = do
 namedEx5 :: FreshM m => m (Term (WithPos NFuzziF) (FuzziM ()))
 namedEx5 = toNamed ex5
 
-noiseSum :: Term (WithPos FuzziF) (FuzziM Double) -> EmMon (Term (WithPos FuzziF)) FuzziM ()
+noiseSum :: Term (WithPos FuzziF) Double -> EmMon (Term (WithPos FuzziF)) FuzziM ()
 noiseSum entry = do
   vx .= (0 :: _ (FuzziM Double))
   vx .$= laplace entry 5.0
