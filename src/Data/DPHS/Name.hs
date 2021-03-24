@@ -27,6 +27,14 @@ makeFieldLabels ''NameState
 empty :: NameState
 empty = NameState M.empty []
 
+globalNames :: [Name] -> NameState
+globalNames [] = NameState M.empty []
+globalNames (N x Nothing:xs) =
+  case globalNames xs of
+    NameState gl _ -> NameState (M.insert x 0 gl) []
+globalNames (N _x (Just _i):_xs) =
+  error "globalNames: unimplemented"
+  
 gfreshAppend :: FreshM m => Name -> Text -> m Name
 gfreshAppend (N b _) postfix =
   gfresh $ b <> postfix

@@ -229,28 +229,33 @@ type FuzziF = ArithF :+: CompareF :+: ExprF
               :+: PrivMechF :+: EffF :+: XLambdaF
               :+: MonadF
               :+: ExtensionF
+              :+: ContainerF
 --type Fuzzi f = Context FuzziF f
 
 type NFuzziF = ArithF :+: CompareF :+: ExprF
               :+: PrivMechF :+: EffF :+: LambdaF
               :+: MonadF
               :+: ExtensionF
+              :+: ContainerF
 --type NFuzzi f = Context NFuzziF f
 
 type NCFuzziF = ArithF :+: CompareF :+: ExprF
                 :+: PrivMechF :+: EffF :+: CLambdaF
                 :+: MonadF
                 :+: ExtensionF
+                :+: ContainerF
 
 type NSFuzziF = ArithF :+: CompareF :+: ExprF
               :+: PrivMechF :+: EffF :+: CLambdaF
               :+: SeqF
               :+: ExtensionF
+              :+: ContainerF
 
 type NSFuzziF1 = ArithF :+: CompareF :+: ExprF
               :+: PrivMechF :+: EffF :+: LambdaF
               :+: SeqF
               :+: ExtensionF
+              :+: ContainerF
 
 assign :: forall a.
           (HasCallStack, Typeable a)

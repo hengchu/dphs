@@ -597,6 +597,25 @@ tyCompareF (Or e1 e2 :&: pos)  = TypeChecker $ \ek cxt -> do
 tyCompareF (Neg e :&: pos) = TypeChecker $ \ek cxt -> do
   runTypeChecker e ek cxt >>= expectAtomic pos >>= return . Atomic
 
+tyContainerF :: MonadThrow m => Alg (ContainerF :&: Pos) (TypeChecker m)
+tyContainerF (VNil :&: _p) = TypeChecker $ \_ek _cxt ->
+  return . Atomic $ ExprInfo (Sens 0) D T 0
+tyContainerF (VCons hd tl :&: pos) = TypeChecker $ \ek cxt -> do
+  hdTi <- runTypeChecker hd ek cxt >>= expectAtomic pos
+  tlTi <- runTypeChecker tl ek cxt >>= expectAtomic pos
+  case (hdTi, tlTi) of
+    ( ExprInfo s1 p1 t1 eps1
+      , ExprInfo s2 p2 t2 eps2
+      ) -> do
+      (return . Atomic) $ ExprInfo (Sens $ asSens s1 + asSens s2) (p1 <> p2) (t1 <> t2) (eps1+eps2)
+    _ -> throwTE pos ExpectingAnExpression
+tyContainerF (VIndex v _i :&: pos) = TypeChecker $ \ek cxt -> do
+  vTi <- runTypeChecker v ek cxt >>= expectAtomic pos
+  case vTi of
+    ExprInfo s p t eps -> do
+      (return . Atomic) $ ExprInfo s p t eps
+    _ -> throwTE pos ExpectingAnExpression
+
 instance TyAlg (ArithF :&: Pos) where
   tyAlg = tyArithF
 instance TyAlg (CompareF :&: Pos) where
@@ -613,6 +632,8 @@ instance TyAlg (SeqF :&: Pos) where
   tyAlg = tySeqF
 instance TyAlg (ExtensionF :&: Pos) where
   tyAlg = tyExtensionF
+instance TyAlg (ContainerF :&: Pos) where
+  tyAlg = tyContainerF
 
 typecheck' :: MonadThrow m
           => Term (WithPos NSFuzziF1) (FuzziM ())

@@ -1,10 +1,12 @@
 {-# OPTIONS_GHC -Wno-missing-signatures -Wno-orphans #-}
+{-# LANGUAGE InstanceSigs #-}
 
 module Data.DPHS.Syntax where
 
 import Type.Reflection hiding (App)
 import Data.Functor.Compose
 import GHC.Stack
+import qualified Data.Foldable as Foldable
 
 import Data.DPHS.Name
 import Data.DPHS.Types
@@ -84,14 +86,38 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
 
 -- |Container types and operations.
 data ContainerF :: (* -> *) -> * -> * where
-  VMake  :: Vec n a -> ContainerF r (Vec n a)
+  VNil   :: ContainerF r (Vec 'O a)
   VCons  :: r a -> r (Vec n a) -> ContainerF r (Vec ('S n) a)
   VIndex :: r (Vec n a) -> Fin n -> ContainerF r a
 
+iVNil :: ContainerF :<: f => Cxt h f x (Vec 'O a)
+iVNil = inject VNil
+
+iAVNil :: (ContainerF :<: s,
+           DistAnn s p f) => p -> Cxt h f x (Vec 'O a)
+iAVNil p = Term (injectA p (inj VNil))
+
+iVCons :: ContainerF :<: f => Cxt h f x a -> Cxt h f x (Vec n a) -> Cxt h f x (Vec ('S n) a)
+iVCons hd tl = inject (VCons hd tl)
+
+iAVCons :: ( ContainerF :<: s
+           , DistAnn s p f)
+        => p -> Cxt h f x a -> Cxt h f x (Vec n a) -> Cxt h f x (Vec ('S n) a)
+iAVCons p hd tl = Term (injectA p (inj (VCons hd tl)))
+
+iVIndex :: ContainerF :<: f => Cxt h f x (Vec n a) -> Fin n -> Cxt h f x a
+iVIndex v i = inject (VIndex v i)
+
+iAVIndex :: ( ContainerF :<: s
+            , DistAnn s p f
+            ) => p -> Cxt h f x (Vec n a) -> Fin n -> Cxt h f x a
+iAVIndex p v i = Term (injectA p (inj (VIndex v i)))
+
 $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
-          --makeShowHF,
-          --makeEqHF, makeOrdHF,
-          smartConstructors, smartAConstructors]
+          makeShowHF
+          --makeEqHF, makeOrdHF
+          --smartConstructors, smartAConstructors
+         ]
          [''ContainerF])
 
 instance
@@ -104,25 +130,38 @@ instance
   , SingNat n
   ) => SyntacticPos lang (Vec n a) where
   type DeepRepr' (Vec n a) = Vec n (DeepRepr' a)
-  toDeepRepr' Nil = iAVMake noPos Nil
+  toDeepRepr' Nil = iAVNil noPos
   toDeepRepr' (Cons x xs) =
     case singNat @n of
-      SS (n' :: _ n') ->
+      SS n' ->
         withSingNat n' $
-        withBounded (SS n') $
+        withBounded (singNat @n) $
         iAVCons noPos (toDeepRepr' x) (toDeepRepr' xs)
 
+  --fromDeepRepr' :: Term (Annotate h Pos) (DeepRepr' (Vec n a)) -> Vec n a
   fromDeepRepr' term =
     case singNat @n of
       SO -> Nil
-      SS (n' :: _ n') ->
+      SS n' ->
         withSingNat n' $
-        withBounded (SS n') $
+        withBounded (singNat @n) $
         let idxs = [minBound .. maxBound] :: [Fin n]
         in case fromList @n $
                   map (\idx -> iAVIndex noPos term idx) idxs of
              Nothing -> error "impossible"
              Just v -> fmap fromDeepRepr' v
+
+instance {-# OVERLAPPING #-}
+  ( ContainerF :<: tgt
+  , ContainerF :&: Pos :<: WithPos tgt
+  , tgtPos ~ WithPos tgt
+  , DistAnn tgt Pos tgtPos
+  ) => HOASToNamed (ContainerF :&: Pos) tgtPos where
+  hoasToNamedAlg (VNil :&: pos) = Compose . return $ iAVNil pos
+  hoasToNamedAlg (VCons hd tl :&: pos) =
+    Compose $ iAVCons pos <$> getCompose hd <*> getCompose tl
+  hoasToNamedAlg (VIndex v i :&: pos) =
+    Compose $ iAVIndex pos <$> getCompose v <*> pure i
 
 {-
 instance {-# OVERLAPPABLE #-}
@@ -587,3 +626,12 @@ untilConvergence f a =
   case f a of
     Worked a -> untilConvergence f a
     Done a -> a
+
+forMon_ :: Foldable t => t (lang a) -> (lang a -> EmMon lang m ()) -> EmMon lang m ()
+forMon_ container f =
+  case Foldable.toList container of
+    -- TODO: a better way to handle this is to create a term that has
+    -- the unit type in the language.
+    [] -> error "forMon_: empty container"
+    [x] -> f x
+    (x:xs) -> f x >> forMon_ xs f
