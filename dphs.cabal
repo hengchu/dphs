@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: d18903a615e11c6a3bb0a1af8e451d73d3b899fe6d29c95179e42ea4d70bbdab
+-- hash: e27e801896ad5559ede976afabc2f87be87eb9faee5972b0ec1c8621c0376ea1
 
 name:           dphs
 version:        0.1.0.0
@@ -30,6 +30,7 @@ library
       Data.DPHS.Algebra
       Data.DPHS.Error
       Data.DPHS.Examples.Fuzzi
+      Data.DPHS.Examples.LogisticRegression
       Data.DPHS.Fuzzi
       Data.DPHS.HXFunctor
       Data.DPHS.Name

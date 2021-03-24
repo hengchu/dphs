@@ -132,7 +132,7 @@ instance {-# OVERLAPPABLE #-}
   Bounded (Fin n) => Bounded (Fin ('S n)) where
   minBound = FO
   maxBound = FS (maxBound @(Fin n))
-  
+
 weaken :: Fin n -> Fin ('S n)
 weaken = unsafeCoerce
 {-
@@ -170,6 +170,14 @@ fromList (x:xs) =
 toList :: Vec n a -> [a]
 toList Nil = []
 toList (Cons x xs) = x:(toList xs)
+
+dot :: Num a => Vec n a -> Vec n a -> a
+dot Nil Nil = 0
+dot (Cons x xs) (Cons y ys) = (x * y) + (dot xs ys)
+
+scale :: Num a => a -> Vec n a -> Vec n a
+scale _ Nil = Nil
+scale k (Cons x xs) = Cons (k * x) (scale k xs)
 
 instance Show a => Show (Vec n a) where
   show xs = show (toList xs)

@@ -84,6 +84,27 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
           smartConstructors, smartAConstructors]
          [''ArithF])
 
+expf :: ( ArithF :<: s
+        , DistAnn s Pos f
+        , Floating a
+        , HasCallStack
+        ) => Cxt h f x a -> Cxt h f x a
+expf x = iAExp (fromCallStack callStack) x
+
+sqrtf :: ( ArithF :<: s
+         , DistAnn s Pos f
+         , Floating a
+         , HasCallStack
+         ) => Cxt h f x a -> Cxt h f x a
+sqrtf x = iASqrt (fromCallStack callStack) x
+
+logf :: ( ArithF :<: s
+        , DistAnn s Pos f
+        , Floating a
+        , HasCallStack
+        ) => Cxt h f x a -> Cxt h f x a
+logf x = iALog (fromCallStack callStack) x
+
 -- |Container types and operations.
 data ContainerF :: (* -> *) -> * -> * where
   VNil   :: ContainerF r (Vec 'O a)
@@ -299,7 +320,7 @@ instance
     Compose $ iABind pos <$> getCompose ma <*> getCompose kont
   hoasToNamedAlg (Ret a :&: pos) =
     Compose $ iARet pos <$> getCompose a
-  
+
 instance Syntactic (Cxt hole lang f) (Cxt hole lang f a) where
   type DeepRepr (Cxt hole lang f a) = a
   toDeepRepr = id
@@ -620,7 +641,7 @@ removeAllBindRet :: forall h a.
   , LambdaF :&: Pos :<: h
   ) => Term h a -> Term h a
 removeAllBindRet = untilConvergence removeBindRetStep
-  
+
 untilConvergence :: (a -> Progress a) -> (a -> a)
 untilConvergence f a =
   case f a of

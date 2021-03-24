@@ -111,3 +111,6 @@ ex6 = do
 
 toNamed :: (Typeable a, FreshM m) => EmMon (Term (WithPos FuzziF)) FuzziM a -> m (Term (WithPos NFuzziF) (FuzziM a))
 toNamed = getCompose . hxcata (hoasToNamedAlg @(WithPos FuzziF)) . xtoCxt . toDeepRepr'
+
+toNamed' :: (Typeable a, FreshM m) => (Term (WithPos FuzziF)) a -> m (Term (WithPos NFuzziF) a)
+toNamed' = getCompose . hxcata (hoasToNamedAlg @(WithPos FuzziF)) . xtoCxt
