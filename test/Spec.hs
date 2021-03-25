@@ -1,6 +1,7 @@
 {-# OPTIONS -Wno-incomplete-uni-patterns #-}
 
 import Data.DPHS.Examples.Fuzzi
+import qualified Data.DPHS.Examples.LogisticRegression as LR
 import Data.DPHS.Fuzzi
 import Data.DPHS.Name
 import Data.DPHS.Typecheck.Fuzzi
@@ -68,6 +69,17 @@ simpleTypeCheckingTests = describe "Data.DPHS.Typecheck.Fuzzi" $ do
       Left err -> expectationFailure (show err)
       Right result -> result
         `shouldBe` (M.fromList [("row", Sens 1.0), ("x", Sens 0), ("y", Sens 0)], P, T, 1, 0)
+  it "successfully checks logistic regression" $ do
+    let ~(Right code) = flip evalStateT LR.names (toNamed (LR.acIters 1000) >>= preprocess)
+    case typecheck code LR.context of
+      Left err -> expectationFailure (show err)
+      Right result@(cxt, p, t, eps, dlt) -> do
+        print result
+        cxt `shouldBe` (M.map Sens LR.context)
+        p `shouldBe` P
+        t `shouldBe` C
+        eps `shouldSatisfy` (<= 17)
+        dlt `shouldBe` (1e-6)
     
 main :: IO ()
 main = hspec $ do

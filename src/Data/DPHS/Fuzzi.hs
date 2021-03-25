@@ -534,7 +534,7 @@ liftSum ''ClassifyLam
 data ClassifyLamError
 
 data SimplMonadError =
-  BoundNonUnit SomeTypeRep
+  BoundNonUnit (Maybe Name) SomeTypeRep
   | ReturnNonUnit SomeTypeRep
   | ExpectConverted
   | ExpectUnbound
@@ -546,7 +546,7 @@ instance Exception SimplMonadError
 instance {-# OVERLAPPING #-}
   ClassifyLam (MonadF :&: Pos) where
   classifyLamAlg (Bind a k :&: pos) =
-    Classified $ \outer -> iABind pos (getClassified a outer) (getClassified k B)
+    Classified $ \_outer -> iABind pos (getClassified a M) (getClassified k B)
   classifyLamAlg (Ret a :&: pos) =
     Classified $ \outer -> iARet pos (getClassified a outer)
 
@@ -577,17 +577,17 @@ instance {-# OVERLAPPING #-} SimplMonad (MonadF :&: Pos) where
       Simplified _ (Just (UnitAbstraction kBody)) ->
         return $ Simplified (iASeq pos (code a) kBody) undefined
       Simplified _ Nothing ->
-        throwPos pos (BoundNonUnit (SomeTypeRep (typeRep @x)))
+        throwPos pos (BoundNonUnit Nothing (SomeTypeRep (typeRep @x)))
   simplMonadAlg (Ret _a :&: pos) = throwPos pos UnexpectedReturn
 
 instance {-# OVERLAPPING #-} SimplMonad (CLambdaF :&: Pos) where
   simplMonadAlg (CLam M x body :&: pos) =
     return $ Simplified (iACLam pos M x (code body)) Nothing
-  simplMonadAlg (CLam B (x :: _ a) body :&: pos) =
+  simplMonadAlg (CLam B (x@(V nm) :: _ a) body :&: pos) =
     case eqTypeRep (typeRep @a) (typeRep @()) of
       Just HRefl ->
         return $ Simplified (iACLam pos B x (code body)) (Just (UnitAbstraction (code body)))
-      Nothing -> throwPos pos (BoundNonUnit (SomeTypeRep (typeRep @a)))
+      Nothing -> throwPos pos (BoundNonUnit (Just nm) (SomeTypeRep (typeRep @a)))
   simplMonadAlg (CApp f a :&: pos) =
     return $ Simplified (iACApp pos (code f) (code a)) Nothing
   simplMonadAlg (CVar x :&: pos) =

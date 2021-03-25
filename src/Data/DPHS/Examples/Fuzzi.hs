@@ -1,7 +1,6 @@
 {-# OPTIONS_GHC -Wno-unused-do-bind #-}
 module Data.DPHS.Examples.Fuzzi where
 
-import Control.Monad
 import Data.Functor.Compose
 import Type.Reflection
 

@@ -111,6 +111,11 @@ data ContainerF :: (* -> *) -> * -> * where
   VCons  :: r a -> r (Vec n a) -> ContainerF r (Vec ('S n) a)
   VIndex :: r (Vec n a) -> Fin n -> ContainerF r a
 
+data TupleF :: (* -> *) -> * -> * where
+  Fst :: r (a, b) -> TupleF r a
+  Snd :: r (a, b) -> TupleF r b
+  Pair :: r a -> r b -> TupleF r (a, b)
+
 iVNil :: ContainerF :<: f => Cxt h f x (Vec 'O a)
 iVNil = inject VNil
 
@@ -140,6 +145,13 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
           --smartConstructors, smartAConstructors
          ]
          [''ContainerF])
+
+$(derive [makeHFunctor, makeHFoldable, makeHTraversable,
+          makeShowHF,
+          makeEqHF, makeOrdHF,
+          smartConstructors, smartAConstructors
+         ]
+         [''TupleF])
 
 instance
   ( SyntacticPos lang a
@@ -648,7 +660,7 @@ untilConvergence f a =
     Worked a -> untilConvergence f a
     Done a -> a
 
-forMon_ :: Foldable t => t (lang a) -> (lang a -> EmMon lang m ()) -> EmMon lang m ()
+forMon_ :: Foldable t => t a -> (a -> EmMon lang m ()) -> EmMon lang m ()
 forMon_ container f =
   case Foldable.toList container of
     -- TODO: a better way to handle this is to create a term that has
