@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: e27e801896ad5559ede976afabc2f87be87eb9faee5972b0ec1c8621c0376ea1
+-- hash: e259358f6cc6bbb5c4b4c69e7110e45007a0e776cf9b78e65803bc03934c43ef
 
 name:           dphs
 version:        0.1.0.0
@@ -51,7 +51,7 @@ library
     , compdata >=0.12 && <1.0
     , containers >=0.6.2.1 && <1.0
     , exceptions >=0.10.4 && <1.0
-    , mtl >=2.1 && <2.3
+    , mtl >=2.2 && <2.3
     , optics >=0.3 && <1.0
     , text >=1.2.4.0 && <1.3
   default-language: Haskell2010
@@ -69,7 +69,7 @@ executable dphs-exe
     , containers >=0.6.2.1 && <1.0
     , dphs
     , exceptions >=0.10.4 && <1.0
-    , mtl >=2.1 && <2.3
+    , mtl >=2.2 && <2.3
     , optics >=0.3 && <1.0
     , text >=1.2.4.0 && <1.3
   default-language: Haskell2010
@@ -92,7 +92,7 @@ test-suite dphs-test
     , exceptions >=0.10.4 && <1.0
     , hspec >=2.7.4 && <2.8
     , hspec-expectations >=0.8.2 && <0.9
-    , mtl >=2.1 && <2.3
+    , mtl >=2.2 && <2.3
     , optics >=0.3 && <1.0
     , text >=1.2.4.0 && <1.3
   default-language: Haskell2010
