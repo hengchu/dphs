@@ -3,6 +3,7 @@
 module Data.DPHS.Symbolic where
 
 import Data.DPHS.Syntax
+import Data.DPHS.Name
 import Data.DPHS.Precedence
 
 import Text.PrettyPrint.ANSI.Leijen
@@ -10,7 +11,9 @@ import Text.PrettyPrint.ANSI.Leijen
 data SExp :: * where
   SI      :: Integer  -> SExp
   SR      :: Rational -> SExp
-  SVar    :: String -> SExp
+  -- |A placeholder for the ith laplace sample from concrete execution.
+  SLap    :: Int -> Double -> SExp
+  SVar    :: Name -> SExp
   SAdd    :: SExp -> SExp -> SExp
   SSub    :: SExp -> SExp -> SExp
   SDiv    :: SExp -> SExp -> SExp
@@ -82,7 +85,8 @@ parensPrec cxt op doc =
 prettySExp :: SExp -> Prec -> Doc
 prettySExp (SI v) _ = integer v
 prettySExp (SR v) _ = double (realToFrac v)
-prettySExp (SVar x) _ = string x
+prettySExp (SLap i width) _ = text "lap_" <> int i <> text "@" <> double width
+prettySExp (SVar x) _ = string (show x)
 prettySExp (SAdd lhs rhs) cxt = IMPL_PRETTY_SEXP("+")
 prettySExp (SSub lhs rhs) cxt = IMPL_PRETTY_SEXP("-")
 prettySExp (SDiv lhs rhs) cxt = IMPL_PRETTY_SEXP("/")
