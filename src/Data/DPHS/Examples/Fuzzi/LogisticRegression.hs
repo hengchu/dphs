@@ -1,6 +1,6 @@
 {-# OPTIONS -Wno-unused-do-bind #-}
 
-module Data.DPHS.Examples.LogisticRegression where
+module Data.DPHS.Examples.Fuzzi.LogisticRegression where
 
 import qualified Data.Map.Strict as M
 import Control.Monad.State.Strict

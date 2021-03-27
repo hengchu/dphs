@@ -1,7 +1,7 @@
 {-# OPTIONS -Wno-incomplete-uni-patterns #-}
 
 import Data.DPHS.Examples.Fuzzi
-import qualified Data.DPHS.Examples.LogisticRegression as LR
+import qualified Data.DPHS.Examples.Fuzzi.LogisticRegression as LR
 import Data.DPHS.Fuzzi
 import Data.DPHS.Name
 import Data.DPHS.Typecheck.Fuzzi

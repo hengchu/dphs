@@ -61,6 +61,13 @@ packages:
       sha256: 42d7f4a1872cd72a3d2a5462abc1e6d5036545a886cd5f1116c6d5e89938c032
   original:
     hackage: optics-th-0.3.0.2@sha256:e786f290c237a3236eda8814957da882227c05ed063d865d4ab1af08d638244f,2038
+- completed:
+    hackage: z3-408.2@sha256:1f8b6ccbcc6d06a6701900a09fcfcbaf86ed8a8495615710bef4da5cdb073a3f,4226
+    pantry-tree:
+      size: 1476
+      sha256: e8562391054f4e07035ab25e1c7ecfba687a46e15aefee4c588b6434dc0b93d8
+  original:
+    hackage: z3-408.2@sha256:1f8b6ccbcc6d06a6701900a09fcfcbaf86ed8a8495615710bef4da5cdb073a3f,4226
 snapshots:
 - completed:
     size: 532172
