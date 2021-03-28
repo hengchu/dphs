@@ -12,7 +12,7 @@ data SExp :: * where
   SI      :: Integer  -> SExp
   SR      :: Rational -> SExp
   -- |A placeholder for the ith laplace sample from concrete execution.
-  SLap    :: Int -> Double -> SExp
+  SLap    :: Int -> SExp -> Double -> SExp
   SVar    :: Name -> SExp
   SAdd    :: SExp -> SExp -> SExp
   SSub    :: SExp -> SExp -> SExp
@@ -85,7 +85,8 @@ parensPrec cxt op doc =
 prettySExp :: SExp -> Prec -> Doc
 prettySExp (SI v) _ = integer v
 prettySExp (SR v) _ = double (realToFrac v)
-prettySExp (SLap i width) _ = text "lap_" <> int i <> text "@" <> double width
+prettySExp (SLap i center width) _ =
+  text "lap" <> parens (int i <> comma <+> prettySExp center (precInt 0) <> comma <+> double width)
 prettySExp (SVar x) _ = string (show x)
 prettySExp (SAdd lhs rhs) cxt = IMPL_PRETTY_SEXP("+")
 prettySExp (SSub lhs rhs) cxt = IMPL_PRETTY_SEXP("-")

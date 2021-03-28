@@ -5,7 +5,6 @@ module Data.DPHS.DPCheck where
 import Data.Comp.Multi
 import Data.Comp.Multi.Derive
 import Optics
-import Optics.TH
 
 import Control.Monad.State.Strict
 import Data.Functor.Compose
@@ -117,4 +116,4 @@ instance NoiseM SymM where
   laplaceNoise (SReal center) width = do
     i <- get >>= \st -> return $ st ^. #sampleCounter
     shift <- SReal . SVar <$> gfresh "shift"
-    return $ (SReal (SLap i width)) + shift
+    return $ (SReal (SLap i center width)) + shift
