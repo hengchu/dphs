@@ -26,10 +26,12 @@ mapStep _ Normal                        = Normal
 
 type Carrier = WithPos DPCheckF
 
-#define DEF_BRANCH _ -> error "step: Normal is only returned on Hole"
+#define DEF_BRANCH _ -> error "step: Normal is only returned on normalized terms"
 
+-- |'step' is not structurally recursive, so we do direct definition
+-- by projection and pattern matching.
 step :: forall i h. Cxt h Carrier I i -> Step (Cxt h Carrier I i)
-step (Hole (I _)) = Normal 
+step (Hole (I _)) = Normal
 -- All EffF cases.
 step (project @(EffF :&: Pos) -> Just (Branch (cond :: _ bool) t f :&: pos)) =
   case eqTypeRep (typeRep @bool) (typeRep @SBool) of
@@ -58,8 +60,41 @@ step (project @(EffF :&: Pos) -> Just (Laplace center width :&: pos)) =
 
 -- All XLambdaF cases.
 step (project @(XLambdaF :&: Pos) -> Just (XLam _f :&: _pos)) = Normal
-step (project @(XLambdaF :&: Pos) -> Just (XApp f arg :&: pos)) = undefined
-  
+step (project @(XLambdaF :&: Pos) -> Just (XApp f arg :&: pos)) =
+  case (f', arg') of
+    (Normal, Normal) ->
+      case project @(XLambdaF :&: Pos) f of
+        Just (XLam fun :&: _funPos) -> Stepped (fun arg)
+        DEF_BRANCH
+    (Normal, otherArg) ->
+      mapStep (\arg -> inject $ XApp f arg :&: pos) otherArg
+    (otherF, _       ) ->
+      mapStep (\f -> inject $ XApp f arg :&: pos) otherF
+  where f' = step f
+        arg' = step arg
+step (project @(XLambdaF :&: Pos) -> Just (XVar v :&: pos)) =
+  error $ "step: out-of-scope variable " ++ show v ++ " at " ++ show pos
+
+-- All MonadF cases.
+step (project @(MonadF :&: Pos) -> Just (Bind m f :&: pos)) =
+  case (m', f') of
+    (Normal, Normal) ->
+      case ( project @(MonadF :&: Pos) m
+           , project @(XLambdaF :&: Pos) f
+           ) of
+        (Just (Ret v :&: _vPos), Just (XLam cont :&: _contPos)) -> Stepped (cont v)
+        DEF_BRANCH
+    (otherM, Normal) ->
+      mapStep (\m -> iABind pos m f) otherM
+    (_,      otherF) ->
+      mapStep (\cont -> iABind pos m cont) otherF
+  where m' = step m
+        f' = step f
+step (project @(MonadF :&: Pos) -> Just (Ret v :&: pos)) =
+  case step v of
+    Normal -> Normal
+    other -> mapStep (iARet pos) other
+          
 #undef DEF_BRANCH
 
 type family ExtractHole (a :: *) where
