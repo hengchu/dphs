@@ -29,6 +29,7 @@ dependencies:
 - mtl >= 2.2 && < 2.3
 - z3 >= 408.2 && < 409
 - ansi-wl-pprint >= 0.6.9 && < 0.7
+- dlist >= 1.0 && < 1.1
 
 ghc-options:
 - -Wall

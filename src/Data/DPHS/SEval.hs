@@ -2,9 +2,13 @@
 
 module Data.DPHS.SEval where
 
-import Type.Reflection
-import qualified GHC.TypeLits as GHC
+import qualified Data.DList as DL
+import Prelude hiding (iterate)
+import Optics
 
+import Type.Reflection
+
+import Data.DPHS.Name
 import Data.DPHS.Syntax
 import Data.DPHS.SrcLoc
 import Data.DPHS.DPCheck
@@ -34,18 +38,30 @@ step :: forall i h. Cxt h Carrier I i -> Step (Cxt h Carrier I i)
 step (Hole (I _)) = Normal
 -- All EffF cases.
 step (project @(EffF :&: Pos) -> Just (Branch (cond :: _ bool) t f :&: pos)) =
-  case eqTypeRep (typeRep @bool) (typeRep @SBool) of
-    Just HRefl -> mapStep (\c -> iABranch pos c t f) (step cond)
-    Nothing ->
-      case eqTypeRep (typeRep @bool) (typeRep @Bool) of
-        Just HRefl ->
-          case step cond of
-            Normal  ->
-              case cond of
-                Hole (I v) -> if v then Stepped t else Stepped f
-                DEF_BRANCH
-            other -> mapStep (\c -> iABranch pos c t f) other
-        Nothing -> error "step: expecting branch condition to be Bool or SBool"
+  case typeCase of
+    Left HRefl ->
+      case step cond of
+        Normal ->
+          case cond of
+            Hole (I vcond) -> PendingBranch vcond (\cond -> if cond then t else f)
+            DEF_BRANCH
+        other -> mapStep (\cond -> iABranch pos cond t f) other
+    Right HRefl ->
+      case step cond of
+        Normal ->
+          case cond of
+            Hole (I vcond) -> if vcond then step t else step f
+            DEF_BRANCH
+        other -> mapStep (\cond -> iABranch pos cond t f) other
+  where
+    typeCase :: Either (bool :~~: SBool) (bool :~~: Bool)
+    typeCase =
+      case eqTypeRep (typeRep @bool) (typeRep @SBool) of
+        Just HRefl -> Left HRefl
+        Nothing ->
+          case eqTypeRep (typeRep @bool) (typeRep @Bool) of
+            Just HRefl -> Right HRefl
+            Nothing -> error "step: expect branch condition to be either Bool or SBool"
 step (project @(EffF :&: Pos) -> Just (Laplace center width :&: pos)) =
   case eqTypeRep (typeRep @i) (typeRep @(SymM SReal)) of
     Just HRefl ->
@@ -94,10 +110,248 @@ step (project @(MonadF :&: Pos) -> Just (Ret v :&: pos)) =
   case step v of
     Normal -> Normal
     other -> mapStep (iARet pos) other
-          
+
+-- All CompareF cases.
+step (project @(CompareF :&: Pos) -> Just (IsEq lhs rhs :&: pos)) =
+  case (lhs', rhs') of
+    (Normal, Normal) ->
+      case (lhs, rhs) of
+        (Hole (I vlhs), Hole (I vrhs)) -> Stepped (Hole (I (vlhs .== vrhs)))
+        DEF_BRANCH
+    (Normal, rhs2) -> mapStep (\rhs -> iAIsEq pos lhs rhs) rhs2
+    (lhs2, _) -> mapStep (\lhs -> iAIsEq pos lhs rhs) lhs2
+  where lhs' = step lhs
+        rhs' = step rhs
+step (project @(CompareF :&: Pos) -> Just (IsNeq lhs rhs :&: pos)) =
+  case (lhs', rhs') of
+    (Normal, Normal) ->
+      case (lhs, rhs) of
+        (Hole (I vlhs), Hole (I vrhs)) -> Stepped (Hole (I (vlhs ./= vrhs)))
+        DEF_BRANCH
+    (Normal, rhs2) -> mapStep (\rhs -> iAIsNeq pos lhs rhs) rhs2
+    (lhs2, _) -> mapStep (\lhs -> iAIsNeq pos lhs rhs) lhs2
+  where lhs' = step lhs
+        rhs' = step rhs
+step (project @(CompareF :&: Pos) -> Just (IsLt lhs rhs :&: pos)) =
+  case (lhs', rhs') of
+    (Normal, Normal) ->
+      case (lhs, rhs) of
+        (Hole (I vlhs), Hole (I vrhs)) -> Stepped (Hole (I (vlhs .< vrhs)))
+        DEF_BRANCH
+    (Normal, rhs2) -> mapStep (\rhs -> iAIsLt pos lhs rhs) rhs2
+    (lhs2, _) -> mapStep (\lhs -> iAIsLt pos lhs rhs) lhs2
+  where lhs' = step lhs
+        rhs' = step rhs
+step (project @(CompareF :&: Pos) -> Just (IsLe lhs rhs :&: pos)) =
+  case (lhs', rhs') of
+    (Normal, Normal) ->
+      case (lhs, rhs) of
+        (Hole (I vlhs), Hole (I vrhs)) -> Stepped (Hole (I (vlhs .<= vrhs)))
+        DEF_BRANCH
+    (Normal, rhs2) -> mapStep (\rhs -> iAIsLe pos lhs rhs) rhs2
+    (lhs2, _) -> mapStep (\lhs -> iAIsLe pos lhs rhs) lhs2
+  where lhs' = step lhs
+        rhs' = step rhs
+step (project @(CompareF :&: Pos) -> Just (IsGt lhs rhs :&: pos)) =
+  case (lhs', rhs') of
+    (Normal, Normal) ->
+      case (lhs, rhs) of
+        (Hole (I vlhs), Hole (I vrhs)) -> Stepped (Hole (I (vlhs .> vrhs)))
+        DEF_BRANCH
+    (Normal, rhs2) -> mapStep (\rhs -> iAIsGt pos lhs rhs) rhs2
+    (lhs2, _) -> mapStep (\lhs -> iAIsGt pos lhs rhs) lhs2
+  where lhs' = step lhs
+        rhs' = step rhs
+step (project @(CompareF :&: Pos) -> Just (IsGe lhs rhs :&: pos)) =
+  case (lhs', rhs') of
+    (Normal, Normal) ->
+      case (lhs, rhs) of
+        (Hole (I vlhs), Hole (I vrhs)) -> Stepped (Hole (I (vlhs .>= vrhs)))
+        DEF_BRANCH
+    (Normal, rhs2) -> mapStep (\rhs -> iAIsGe pos lhs rhs) rhs2
+    (lhs2, _) -> mapStep (\lhs -> iAIsGe pos lhs rhs) lhs2
+  where lhs' = step lhs
+        rhs' = step rhs
+step (project @(CompareF :&: Pos) -> Just (Neg term :&: pos)) =
+  case term' of
+    Normal ->
+      case term of
+        Hole (I value) -> Stepped (Hole (I (neg value)))
+        DEF_BRANCH
+    other -> mapStep (\term -> iANeg pos term) other
+  where term' = step term
+step (project @(CompareF :&: Pos) -> Just (And lhs rhs :&: pos)) =
+  case (lhs', rhs') of
+    (Normal, Normal) ->
+      case (lhs, rhs) of
+        (Hole (I vlhs), Hole (I vrhs)) -> Stepped (Hole (I (vlhs .&& vrhs)))
+        DEF_BRANCH
+    (Normal, rhs2) -> mapStep (\rhs -> iAAnd pos lhs rhs) rhs2
+    (lhs2, _) -> mapStep (\lhs -> iAAnd pos lhs rhs) lhs2
+  where lhs' = step lhs
+        rhs' = step rhs
+step (project @(CompareF :&: Pos) -> Just (Or lhs rhs :&: pos)) =
+  case (lhs', rhs') of
+    (Normal, Normal) ->
+      case (lhs, rhs) of
+        (Hole (I vlhs), Hole (I vrhs)) -> Stepped (Hole (I (vlhs .|| vrhs)))
+        DEF_BRANCH
+    (Normal, rhs2) -> mapStep (\rhs -> iAOr pos lhs rhs) rhs2
+    (lhs2, _) -> mapStep (\lhs -> iAOr pos lhs rhs) lhs2
+  where lhs' = step lhs
+        rhs' = step rhs
+
+-- All ArithF cases.
+step (project @(ArithF :&: Pos) -> Just (IntLit _value :&: _pos)) = Normal
+step (project @(ArithF :&: Pos) -> Just (FracLit _value :&: _pos)) = Normal
+step (project @(ArithF :&: Pos) -> Just (Add lhs rhs :&: pos)) =
+  case (lhs', rhs') of
+    (Normal, Normal) ->
+      case (lhs, rhs) of
+        (Hole (I vlhs), Hole (I vrhs)) -> Stepped (Hole (I (vlhs + vrhs)))
+        DEF_BRANCH
+    (Normal, rhs2) -> mapStep (\rhs -> iAAdd pos lhs rhs) rhs2
+    (lhs2, _) -> mapStep (\lhs -> iAAdd pos lhs rhs) lhs2
+  where lhs' = step lhs
+        rhs' = step rhs
+step (project @(ArithF :&: Pos) -> Just (Sub lhs rhs :&: pos)) =
+  case (lhs', rhs') of
+    (Normal, Normal) ->
+      case (lhs, rhs) of
+        (Hole (I vlhs), Hole (I vrhs)) -> Stepped (Hole (I (vlhs - vrhs)))
+        DEF_BRANCH
+    (Normal, rhs2) -> mapStep (\rhs -> iASub pos lhs rhs) rhs2
+    (lhs2, _) -> mapStep (\lhs -> iASub pos lhs rhs) lhs2
+  where lhs' = step lhs
+        rhs' = step rhs
+step (project @(ArithF :&: Pos) -> Just (Abs term :&: pos)) =
+  case term' of
+    Normal ->
+      case term of
+        Hole (I value) -> Stepped (Hole (I (abs value)))
+        DEF_BRANCH
+    other -> mapStep (\term -> iAAbs pos term) other
+  where term' = step term
+step (project @(ArithF :&: Pos) -> Just (Signum term :&: pos)) =
+  case term' of
+    Normal ->
+      case term of
+        Hole (I value) -> Stepped (Hole (I (signum value)))
+        DEF_BRANCH
+    other -> mapStep (\term -> iASignum pos term) other
+  where term' = step term
+step (project @(ArithF :&: Pos) -> Just (Mult lhs rhs :&: pos)) =
+  case (lhs', rhs') of
+    (Normal, Normal) ->
+      case (lhs, rhs) of
+        (Hole (I vlhs), Hole (I vrhs)) -> Stepped (Hole (I (vlhs * vrhs)))
+        DEF_BRANCH
+    (Normal, rhs2) -> mapStep (\rhs -> iAMult pos lhs rhs) rhs2
+    (lhs2, _) -> mapStep (\lhs -> iAMult pos lhs rhs) lhs2
+  where lhs' = step lhs
+        rhs' = step rhs
+step (project @(ArithF :&: Pos) -> Just (Div lhs rhs :&: pos)) =
+  case (lhs', rhs') of
+    (Normal, Normal) ->
+      case (lhs, rhs) of
+        (Hole (I vlhs), Hole (I vrhs)) -> Stepped (Hole (I (vlhs / vrhs)))
+        DEF_BRANCH
+    (Normal, rhs2) -> mapStep (\rhs -> iADiv pos lhs rhs) rhs2
+    (lhs2, _) -> mapStep (\lhs -> iADiv pos lhs rhs) lhs2
+  where lhs' = step lhs
+        rhs' = step rhs
+step (project @(ArithF :&: Pos) -> Just (IDiv lhs rhs :&: pos)) =
+  case (lhs', rhs') of
+    (Normal, Normal) ->
+      case (lhs, rhs) of
+        (Hole (I vlhs), Hole (I vrhs)) -> Stepped (Hole (I (vlhs `idiv` vrhs)))
+        DEF_BRANCH
+    (Normal, rhs2) -> mapStep (\rhs -> iAIDiv pos lhs rhs) rhs2
+    (lhs2, _) -> mapStep (\lhs -> iAIDiv pos lhs rhs) lhs2
+  where lhs' = step lhs
+        rhs' = step rhs
+step (project @(ArithF :&: Pos) -> Just (IMod lhs rhs :&: pos)) =
+  case (lhs', rhs') of
+    (Normal, Normal) ->
+      case (lhs, rhs) of
+        (Hole (I vlhs), Hole (I vrhs)) -> Stepped (Hole (I (vlhs `imod` vrhs)))
+        DEF_BRANCH
+    (Normal, rhs2) -> mapStep (\rhs -> iAIMod pos lhs rhs) rhs2
+    (lhs2, _) -> mapStep (\lhs -> iAIMod pos lhs rhs) lhs2
+  where lhs' = step lhs
+        rhs' = step rhs
+step (project @(ArithF :&: Pos) -> Just (Exp term :&: pos)) =
+  case term' of
+    Normal ->
+      case term of
+        Hole (I value) -> Stepped (Hole (I (exp value)))
+        DEF_BRANCH
+    other -> mapStep (\term -> iAExp pos term) other
+  where term' = step term
+step (project @(ArithF :&: Pos) -> Just (Log term :&: pos)) =
+  case term' of
+    Normal ->
+      case term of
+        Hole (I value) -> Stepped (Hole (I (log value)))
+        DEF_BRANCH
+    other -> mapStep (\term -> iALog pos term) other
+  where term' = step term
+step (project @(ArithF :&: Pos) -> Just (Sqrt term :&: pos)) =
+  case term' of
+    Normal ->
+      case term of
+        Hole (I value) -> Stepped (Hole (I (sqrt value)))
+        DEF_BRANCH
+    other -> mapStep (\term -> iASqrt pos term) other
+  where term' = step term
+
+step _other = error "step: unhandled syntactic form"
+
 #undef DEF_BRANCH
 
-type family ExtractHole (a :: *) where
-  ExtractHole (Cxt h _ _ _) = h
-  ExtractHole a =
-    GHC.TypeError ('GHC.Text "Cannot extract hole from type: " 'GHC.:<>: 'GHC.ShowType a)
+type PathConditions = [SBool]
+
+data Work a where
+  Continue :: SymState
+           -> PathConditions
+           -> Cxt h Carrier I a
+           -> Work a
+
+data Result a = Result {
+  rValue :: a
+  , rPathConditions :: PathConditions
+  , rSymbolicState :: SymState
+  }
+
+makeFieldLabelsWith abbreviatedFieldLabels ''Result
+
+iterate :: [Work a] -> ([Result a], [Work a])
+iterate = go [] []
+  where go :: [Result a] -> [Work a] -> [Work a] -> ([Result a], [Work a])
+        go results konts [] = (results, konts)
+        go results konts (Continue st pcs term:more) =
+          case step term of
+            Stepped term' -> go results (Continue st pcs term':konts) more
+            PendingBranch sbool k ->
+              go results (Continue st (sbool:pcs) (k True):
+                          Continue st (neg sbool:pcs) (k False):konts) more
+            PendingNoise center width k ->
+              let (instr, st') = runSymM st $ do
+                    sample <- laplaceNoise center width
+                    shift <- SReal . SVar <$> gfresh "shift"
+                    cost <- SReal . SVar <$> gfresh "cost"
+                    return $ SymInstr sample shift cost
+              in go results (Continue st' pcs (k (instr ^. #sample)):konts) more
+            Normal ->
+              case term of
+                Hole (I val) -> go (Result val pcs st:results) konts more
+                _ -> error "iterate: expected first-order value on normalized term"
+
+explore :: [Work a] -> [Result a]
+explore [] = []
+explore work =
+  case iterate work of
+    (results, more) -> results ++ explore more
+
+seval :: Cxt h Carrier I a -> [Result a]
+seval term = explore [Continue (SymState empty DL.empty 0) [] term]

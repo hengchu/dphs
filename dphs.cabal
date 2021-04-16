@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 9e941f9b9a3fc20056e2c32662e2e55e5d58a8ced336dc6b7d7fff4f18a45407
+-- hash: 3a9921c9117a720f3c89aff67b1e9ef050d8addfdfcfce08e90113b3466889e8
 
 name:           dphs
 version:        0.1.0.0
@@ -55,6 +55,7 @@ library
     , base >=4.8 && <5
     , compdata >=0.12 && <1.0
     , containers >=0.6.2.1 && <1.0
+    , dlist >=1.0 && <1.1
     , exceptions >=0.10.4 && <1.0
     , mtl >=2.2 && <2.3
     , optics >=0.3 && <1.0
@@ -74,6 +75,7 @@ executable dphs-exe
     , base >=4.8 && <5
     , compdata >=0.12 && <1.0
     , containers >=0.6.2.1 && <1.0
+    , dlist >=1.0 && <1.1
     , dphs
     , exceptions >=0.10.4 && <1.0
     , mtl >=2.2 && <2.3
@@ -97,6 +99,7 @@ test-suite dphs-test
     , base >=4.8 && <5
     , compdata >=0.12 && <1.0
     , containers >=0.6.2.1 && <1.0
+    , dlist >=1.0 && <1.1
     , dphs
     , exceptions >=0.10.4 && <1.0
     , hspec >=2.7.4 && <2.8

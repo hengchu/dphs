@@ -51,6 +51,7 @@ extra-deps:
 - optics-extra-0.3@sha256:b1b9917596a4305069aa95eaf3083afe88c6db3c84ed6f52e926c82d0c56eea9,3382
 - optics-th-0.3.0.2@sha256:e786f290c237a3236eda8814957da882227c05ed063d865d4ab1af08d638244f,2038
 - z3-408.2@sha256:1f8b6ccbcc6d06a6701900a09fcfcbaf86ed8a8495615710bef4da5cdb073a3f,4226
+- dlist-1.0@sha256:124cb3aa1decebd5171b46601b1f74cca6cfae12d266ace3799b86dd05ef7cb4,3560
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
@@ -78,4 +79,3 @@ extra-lib-dirs:
 #
 # Allow a newer minor version of GHC than the snapshot specifies
 # compiler-check: newer-minor
-

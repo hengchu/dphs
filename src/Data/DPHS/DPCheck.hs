@@ -2,10 +2,12 @@
 
 module Data.DPHS.DPCheck where
 
+import Data.DList
 import Data.Comp.Multi
 import Data.Comp.Multi.Derive
 import Optics
 
+import Text.Printf
 import Control.Monad.State.Strict
 import Data.Functor.Compose
 import Data.Kind
@@ -42,11 +44,15 @@ $(derive [makeHFunctor, makeHFoldable, makeHTraversable,
           smartConstructors, smartAConstructors]
          [''EffF])
 
-type DPCheckF = ArithF :+: CompareF 
-                :+: EffF :+: XLambdaF :+: MonadF :+: ContainerF
+instance ShowHF EffF where
+  showHF (Branch cond t1 t2) = K (printf "if %s then %s else %s" (unK cond) (unK t1) (unK t2))
+  showHF (Laplace center width) = K (printf "laplace %s %f" (unK center) width)
+
+type DPCheckF = ArithF :+: CompareF
+                :+: EffF :+: XLambdaF :+: MonadF -- :+: ContainerF
 
 type NDPCheckF = ArithF :+: CompareF
-                 :+: EffF :+: LambdaF :+: MonadF :+: ContainerF
+                 :+: EffF :+: LambdaF :+: MonadF -- :+: ContainerF
 
 instance
   ( EffF :<: tgt
@@ -54,7 +60,7 @@ instance
   , tgtPos ~ WithPos tgt
   , DistAnn tgt Pos tgtPos
   ) => HOASToNamed (EffF :&: Pos) tgtPos where
-  hoasToNamedAlg (Branch cond t f :&: pos) = 
+  hoasToNamedAlg (Branch cond t f :&: pos) =
     Compose $ iABranch pos <$> getCompose cond <*> getCompose t <*> getCompose f
   hoasToNamedAlg (Laplace center width :&: pos) =
     Compose $ iALaplace pos <$> getCompose center <*> pure width
@@ -81,29 +87,43 @@ laplace ::
 laplace center width =
   fromDeepRepr' $ iALaplace (fromCallStack callStack) center width
 
+data SymInstr = SymInstr {
+  siSample :: SReal
+  , siShift :: SReal
+  , siCost :: SReal
+  } deriving (Show, Eq)
+
+
 data SymState = SymState {
+  -- |The state for generating fresh names.
   ssNames :: NameState,
+  -- |The list of symbolic sample, shift, and cost.
+  ssSymbolicTrace :: DList SymInstr,
   ssSampleCounter :: Int
-  } deriving (Show, Eq, Ord)
+  } deriving (Show, Eq)
 
 -- |The Monad for symbolic execution of DPCheck programs.
-newtype SymM a = SymM { runSymM :: State SymState a }
+newtype SymM a = SymM { runSymM_ :: State SymState a }
   deriving ( Functor
            , Applicative
            , Monad
            , MonadState SymState
            ) via (State SymState)
 
+runSymM :: SymState -> SymM a -> (a, SymState)
+runSymM st = flip runState st . runSymM_
+
 type family UnsupportedBoolType b where
   UnsupportedBoolType b =
     GHC.TypeError ('GHC.Text "Unsupported boolean type: "
-                   'GHC.:<>: 'GHC.ShowType b) 
+                   'GHC.:<>: 'GHC.ShowType b)
 
 type family CheckBool (b :: *) :: Constraint where
   CheckBool Bool = ()
   CheckBool SBool = ()
   CheckBool b = UnsupportedBoolType b
 
+makeFieldLabelsWith abbreviatedFieldLabels ''SymInstr
 makeFieldLabelsWith abbreviatedFieldLabels ''SymState
 
 instance FreshM SymM where
@@ -115,5 +135,4 @@ instance NoiseM SymM where
 
   laplaceNoise (SReal center) width = do
     i <- get >>= \st -> return $ st ^. #sampleCounter
-    shift <- SReal . SVar <$> gfresh "shift"
-    return $ (SReal (SLap i center width)) + shift
+    return $ (SReal (SLap i center width))
