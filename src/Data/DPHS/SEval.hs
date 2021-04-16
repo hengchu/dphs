@@ -341,7 +341,8 @@ iterate = go [] []
                     shift <- SReal . SVar <$> gfresh "shift"
                     cost <- SReal . SVar <$> gfresh "cost"
                     return $ SymInstr sample shift cost
-              in go results (Continue st' pcs (k (instr ^. #sample)):konts) more
+                  actualSt' = st' & (#symbolicTrace %~ flip DL.snoc instr)
+              in go results (Continue actualSt' pcs (k (instr ^. #sample)):konts) more
             Normal ->
               case term of
                 Hole (I val) -> go (Result val pcs st:results) konts more
