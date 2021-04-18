@@ -102,7 +102,7 @@ prettySExp (SLt lhs rhs) cxt = IMPL_PRETTY_SEXP("<")
 prettySExp (SLe lhs rhs) cxt = IMPL_PRETTY_SEXP("<=")
 prettySExp (SGt lhs rhs) cxt = IMPL_PRETTY_SEXP(">")
 prettySExp (SGe lhs rhs) cxt = IMPL_PRETTY_SEXP(">=")
-prettySExp (SNeg t) cxt = text "-" <> prettySExp t cxt
+prettySExp (SNeg t) cxt = text "!" <> prettySExp t cxt
 prettySExp (SAnd lhs rhs) cxt = IMPL_PRETTY_SEXP("&&")
 prettySExp (SOr lhs rhs) cxt = IMPL_PRETTY_SEXP("||")
 

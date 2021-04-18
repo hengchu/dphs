@@ -135,4 +135,5 @@ instance NoiseM SymM where
 
   laplaceNoise (SReal center) width = do
     i <- get >>= \st -> return $ st ^. #sampleCounter
+    modify $ \st -> st & #sampleCounter %~ (+1)
     return $ (SReal (SLap i center width))

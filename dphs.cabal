@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 3a9921c9117a720f3c89aff67b1e9ef050d8addfdfcfce08e90113b3466889e8
+-- hash: 826c875b0e32bc46b00ebaa88424166368d219ee765028ab37332ee9c799199f
 
 name:           dphs
 version:        0.1.0.0
@@ -30,6 +30,7 @@ library
       Data.DPHS.Algebra
       Data.DPHS.DPCheck
       Data.DPHS.Error
+      Data.DPHS.Examples.DPCheck
       Data.DPHS.Examples.Fuzzi
       Data.DPHS.Examples.Fuzzi.LogisticRegression
       Data.DPHS.Fuzzi
@@ -60,7 +61,6 @@ library
     , mtl >=2.2 && <2.3
     , optics >=0.3 && <1.0
     , text >=1.2.4.0 && <1.3
-    , z3 >=408.2 && <409
   default-language: Haskell2010
 
 executable dphs-exe
@@ -81,7 +81,6 @@ executable dphs-exe
     , mtl >=2.2 && <2.3
     , optics >=0.3 && <1.0
     , text >=1.2.4.0 && <1.3
-    , z3 >=408.2 && <409
   default-language: Haskell2010
 
 test-suite dphs-test
@@ -107,5 +106,4 @@ test-suite dphs-test
     , mtl >=2.2 && <2.3
     , optics >=0.3 && <1.0
     , text >=1.2.4.0 && <1.3
-    , z3 >=408.2 && <409
   default-language: Haskell2010

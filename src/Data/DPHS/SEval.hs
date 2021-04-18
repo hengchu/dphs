@@ -30,11 +30,11 @@ mapStep _ Normal                        = Normal
 
 type Carrier = WithPos DPCheckF
 
-#define DEF_BRANCH _ -> error "step: Normal is only returned on normalized terms"
+#define DEF_BRANCH _ -> error $ "step: Normal is only returned on normalized terms " ++ show pos
 
 -- |'step' is not structurally recursive, so we do direct definition
 -- by projection and pattern matching.
-step :: forall i h. Cxt h Carrier I i -> Step (Cxt h Carrier I i)
+step :: forall i. Cxt Hole Carrier I i -> Step (Cxt Hole Carrier I i)
 step (Hole (I _)) = Normal
 -- All EffF cases.
 step (project @(EffF :&: Pos) -> Just (Branch (cond :: _ bool) t f :&: pos)) =
@@ -202,8 +202,10 @@ step (project @(CompareF :&: Pos) -> Just (Or lhs rhs :&: pos)) =
         rhs' = step rhs
 
 -- All ArithF cases.
-step (project @(ArithF :&: Pos) -> Just (IntLit _value :&: _pos)) = Normal
-step (project @(ArithF :&: Pos) -> Just (FracLit _value :&: _pos)) = Normal
+step (project @(ArithF :&: Pos) -> Just (IntLit value :&: _pos)) =
+  Stepped (Hole (I (fromIntegral value)))
+step (project @(ArithF :&: Pos) -> Just (FracLit value :&: _pos)) =
+  Stepped (Hole (I (realToFrac value)))
 step (project @(ArithF :&: Pos) -> Just (Add lhs rhs :&: pos)) =
   case (lhs', rhs') of
     (Normal, Normal) ->
@@ -314,7 +316,7 @@ type PathConditions = [SBool]
 data Work a where
   Continue :: SymState
            -> PathConditions
-           -> Cxt h Carrier I a
+           -> Cxt Hole Carrier I a
            -> Work a
 
 data Result a = Result {
@@ -322,12 +324,16 @@ data Result a = Result {
   , rPathConditions :: PathConditions
   , rSymbolicState :: SymState
   }
+  deriving (Show, Eq)
 
 makeFieldLabelsWith abbreviatedFieldLabels ''Result
 
-iterate :: [Work a] -> ([Result a], [Work a])
+iterate :: [Work (SymM a)] -> ([Result a], [Work (SymM a)])
 iterate = go [] []
-  where go :: [Result a] -> [Work a] -> [Work a] -> ([Result a], [Work a])
+  where go :: [Result a]
+           -> [Work (SymM a)]
+           -> [Work (SymM a)]
+           -> ([Result a], [Work (SymM a)])
         go results konts [] = (results, konts)
         go results konts (Continue st pcs term:more) =
           case step term of
@@ -344,15 +350,19 @@ iterate = go [] []
                   actualSt' = st' & (#symbolicTrace %~ flip DL.snoc instr)
               in go results (Continue actualSt' pcs (k (instr ^. #sample)):konts) more
             Normal ->
-              case term of
-                Hole (I val) -> go (Result val pcs st:results) konts more
-                _ -> error "iterate: expected first-order value on normalized term"
+              case project @(MonadF :&: Pos) term of
+                Just (Ret vterm :&: _pos) ->
+                  case vterm of
+                    Hole (I val) -> go (Result val pcs st:results) konts more
+                    _other -> error "iterate: expected first-order value on normalized term"
+                --Hole (I val) -> go (Result val pcs st:results) konts more
+                _other -> error "iterate: expected (Ret _) on normalized term"
 
-explore :: [Work a] -> [Result a]
+explore :: [Work (SymM a)] -> [Result a]
 explore [] = []
 explore work =
   case iterate work of
     (results, more) -> results ++ explore more
 
-seval :: Cxt h Carrier I a -> [Result a]
+seval :: Cxt Hole Carrier I (SymM a) -> [Result a]
 seval term = explore [Continue (SymState empty DL.empty 0) [] term]

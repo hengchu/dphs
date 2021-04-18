@@ -71,11 +71,11 @@ extra-deps:
 # arch: x86_64
 #
 # Extra directories used by stack for building
-extra-include-dirs:
-- /Users/hengchu/opt/include
+#extra-include-dirs:
+#- /Users/hengchu/opt/include
 
-extra-lib-dirs:
-- /Users/hengchu/opt/lib
+#extra-lib-dirs:
+#- /Users/hengchu/opt/lib
 #
 # Allow a newer minor version of GHC than the snapshot specifies
 # compiler-check: newer-minor
