@@ -25,3 +25,23 @@ trivial = do
   if_ (x .>= 0)
       (laplace 0 1.0)
       (laplace 1 1.0)
+
+rnm :: forall m num. DPCheck m num => [Term (WithPos DPCheckF) num] -> EmMon (Term (WithPos DPCheckF)) m Int
+rnm []     = error "rnm: received empty input"
+rnm (x:xs) = do
+  xNoised <- laplace x 1.0
+  rnmAux xs xNoised 0 1
+
+rnmAux :: forall m num.
+  DPCheck m num
+  => [Term (WithPos DPCheckF) num]
+  -> Term (WithPos DPCheckF) num
+  -> Term (WithPos DPCheckF) Int
+  -> Term (WithPos DPCheckF) Int
+  -> EmMon (Term (WithPos DPCheckF)) m Int
+rnmAux []     _       maxIdx _       = return maxIdx
+rnmAux (x:xs) currMax maxIdx thisIdx = do
+  noised <- laplace x 1.0
+  if_ (noised .> currMax)
+      (rnmAux xs noised  thisIdx (thisIdx+1))
+      (rnmAux xs currMax maxIdx  (thisIdx+1))

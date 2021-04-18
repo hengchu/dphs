@@ -339,13 +339,14 @@ iterate = go [] []
           case step term of
             Stepped term' -> go results (Continue st pcs term':konts) more
             PendingBranch sbool k ->
-              go results (Continue st (sbool:pcs) (k True):
+              -- TODO: Check consistency of path condition here to prune dead branches.
+              go results (Continue st (sbool:pcs)     (k True):
                           Continue st (neg sbool:pcs) (k False):konts) more
             PendingNoise center width k ->
               let (instr, st') = runSymM st $ do
                     sample <- laplaceNoise center width
-                    shift <- SReal . SVar <$> gfresh "shift"
-                    cost <- SReal . SVar <$> gfresh "cost"
+                    shift  <- SReal . SVar <$> gfresh "shift"
+                    cost   <- SReal . SVar <$> gfresh "cost"
                     return $ SymInstr sample shift cost
                   actualSt' = st' & (#symbolicTrace %~ flip DL.snoc instr)
               in go results (Continue actualSt' pcs (k (instr ^. #sample)):konts) more
@@ -358,11 +359,18 @@ iterate = go [] []
                 --Hole (I val) -> go (Result val pcs st:results) konts more
                 _other -> error "iterate: expected (Ret _) on normalized term"
 
+interleave :: [a] -> [a] -> [a]
+interleave (x:xs) ys = x:(interleave ys xs)
+interleave []     ys = ys
+
 explore :: [Work (SymM a)] -> [Result a]
 explore [] = []
 explore work =
   case iterate work of
-    (results, more) -> results ++ explore more
+    (results, more) ->
+      -- Using 'interleave' here ensures fair BFS across all branches,
+      -- and allows lazy enumeration of productive infinite programs.
+      interleave results (explore more)
 
 seval :: Cxt Hole Carrier I (SymM a) -> [Result a]
 seval term = explore [Continue (SymState empty DL.empty 0) [] term]
