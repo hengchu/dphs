@@ -12,6 +12,8 @@ import Control.Monad.State.Strict
 
 import Test.Hspec
 
+import qualified SpecSEval as SEvalTests 
+
 preprocessTests :: SpecWith (Arg Expectation)
 preprocessTests = describe "Data.DPHS.Fuzzi.preprocess" $ do
   it "successfully processes ex1" $ do
@@ -86,3 +88,4 @@ main = hspec $ do
   preprocessTests
   sensitivityTests
   simpleTypeCheckingTests
+  SEvalTests.sevalTests

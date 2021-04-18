@@ -71,8 +71,8 @@ instance KnownOperator "==" where
   prec = precInt 400
   fixity = NA
 
-instance KnownOperator "not" where
-  prec = precInt 300
+instance KnownOperator "!" where
+  prec = precInt 1400
   fixity = NA
 
 instance KnownOperator "&&" where

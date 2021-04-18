@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 826c875b0e32bc46b00ebaa88424166368d219ee765028ab37332ee9c799199f
+-- hash: 95c61b346728bdbdbc512651016b0e7565df58a737dfaa4ce272140fe604c7b7
 
 name:           dphs
 version:        0.1.0.0
@@ -87,6 +87,7 @@ test-suite dphs-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      SpecSEval
       Paths_dphs
   hs-source-dirs:
       test
