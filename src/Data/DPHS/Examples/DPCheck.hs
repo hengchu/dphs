@@ -26,7 +26,8 @@ trivial = do
       (laplace 0 1.0)
       (laplace 1 1.0)
 
-rnm :: forall m num. DPCheck m num => [Term (WithPos DPCheckF) num] -> EmMon (Term (WithPos DPCheckF)) m Int
+rnm :: forall m num. DPCheck m num =>
+  [Term (WithPos DPCheckF) num] -> EmMon (Term (WithPos DPCheckF)) m Int
 rnm []     = error "rnm: received empty input"
 rnm (x:xs) = do
   xNoised <- laplace x 1.0

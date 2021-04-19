@@ -2,17 +2,25 @@
 
 module Data.DPHS.SEval where
 
-import qualified Data.DList as DL
-import Prelude hiding (iterate)
+import Control.Monad.IO.Class
+import Control.Monad.Trans.Class
+import Data.Text (pack)
 import Optics
+import Prelude hiding (iterate)
+import Text.Printf
+import qualified Data.DList as DL
+import qualified Streamly as S
+import qualified Streamly.Prelude as S
 
 import Type.Reflection
 
-import Data.DPHS.Name
-import Data.DPHS.Syntax
-import Data.DPHS.SrcLoc
 import Data.DPHS.DPCheck
+import Data.DPHS.Logging
+import Data.DPHS.Name
+import Data.DPHS.SolverZ3
+import Data.DPHS.SrcLoc
 import Data.DPHS.Symbolic
+import Data.DPHS.Syntax
 
 import Data.Comp.Multi
 
@@ -328,49 +336,69 @@ data Result a = Result {
 
 makeFieldLabelsWith abbreviatedFieldLabels ''Result
 
-iterate :: [Work (SymM a)] -> ([Result a], [Work (SymM a)])
-iterate = go [] []
-  where go :: [Result a]
-           -> [Work (SymM a)]
-           -> [Work (SymM a)]
-           -> ([Result a], [Work (SymM a)])
-        go results konts [] = (results, konts)
-        go results konts (Continue st pcs term:more) =
-          case step term of
-            Stepped term' -> go results (Continue st pcs term':konts) more
-            PendingBranch sbool k ->
-              -- TODO: Check consistency of path condition here to prune dead branches.
-              go results (Continue st (sbool:pcs)     (k True):
-                          Continue st (neg sbool:pcs) (k False):konts) more
-            PendingNoise center width k ->
-              let (instr, st') = runSymM st $ do
-                    sample <- laplaceNoise center width
-                    shift  <- SReal . SVar <$> gfresh "shift"
-                    cost   <- SReal . SVar <$> gfresh "cost"
-                    return $ SymInstr sample shift cost
-                  actualSt' = st' & (#symbolicTrace %~ flip DL.snoc instr)
-              in go results (Continue actualSt' pcs (k (instr ^. #sample)):konts) more
-            Normal ->
-              case project @(MonadF :&: Pos) term of
-                Just (Ret vterm :&: _pos) ->
-                  case vterm of
-                    Hole (I val) -> go (Result val pcs st:results) konts more
-                    _other -> error "iterate: expected first-order value on normalized term"
-                --Hole (I val) -> go (Result val pcs st:results) konts more
-                _other -> error "iterate: expected (Ret _) on normalized term"
+type SerialLogging = S.SerialT (LoggingT IO)
 
-interleave :: [a] -> [a] -> [a]
-interleave (x:xs) ys = x:(interleave ys xs)
-interleave []     ys = ys
+iterate :: SerialLogging (Work (SymM a))
+        ->  LoggingT IO ( SerialLogging (Result a)
+                        , SerialLogging (Work (SymM a))
+                        )
+iterate = go S.nil S.nil
+  where go :: SerialLogging (Result a)
+           -> SerialLogging (Work (SymM a)) -- ^work list of items that has been stepped in this iteration already
+           -> SerialLogging (Work (SymM a)) -- ^work list of items to be stepped in this iteration
+           -> LoggingT IO ( SerialLogging (Result a)
+                          , SerialLogging (Work (SymM a))
+                          )
+        go results konts worklist = do
+          hasWork <- S.uncons @S.SerialT worklist
+          case hasWork of
+            Nothing -> return (results, konts)
+            Just (Continue st pcs term, more) -> do
+              case step term of
+                Stepped term' -> go results (Continue st pcs term' `S.cons` konts) more
+                PendingBranch sbool k -> do
+                  let trueConds = sbool:pcs
+                  let falseConds = (neg sbool):pcs
+                  let sampleCount = st ^. #sampleCounter
 
-explore :: [Work (SymM a)] -> [Result a]
-explore [] = []
-explore work =
-  case iterate work of
-    (results, more) ->
-      -- Using 'interleave' here ensures fair BFS across all branches,
-      -- and allows lazy enumeration of productive infinite programs.
-      interleave results (explore more)
+                  $(logInfo) (pack $ printf "checking path consistency for %s" (show trueConds))
+                  trueConsistency <- liftIO $ checkConsistency trueConds sampleCount
+                  $(logInfo) (pack $ printf "path is %s" (show trueConsistency))
 
-seval :: Cxt Hole Carrier I (SymM a) -> [Result a]
-seval term = explore [Continue (SymState empty DL.empty 0) [] term]
+                  $(logInfo) (pack $ printf "checking path consistency for %s" (show falseConds))
+                  falseConsistency <- liftIO $ checkConsistency falseConds sampleCount
+                  $(logInfo) (pack $ printf "path is %s" (show falseConsistency))
+
+                  case (trueConsistency, falseConsistency) of
+                    (Ok, Ok) -> go results (Continue st trueConds (k True) `S.cons`
+                                            Continue st falseConds (k False) `S.cons`
+                                            konts) more
+                    (Ok, Inconsistent) -> go results (Continue st trueConds (k True) `S.cons` konts) more
+                    (Inconsistent, Ok) -> go results (Continue st falseConds (k False) `S.cons` konts) more
+                    _ -> go results konts more
+                PendingNoise center width k ->
+                  let (instr, st') = runSymM st $ do
+                        sample <- laplaceNoise center width
+                        shift  <- SReal . SVar <$> gfresh "shift"
+                        cost   <- SReal . SVar <$> gfresh "cost"
+                        return $ SymInstr sample shift cost
+                      actualSt' = st' & (#symbolicTrace %~ flip DL.snoc instr)
+                  in go results (Continue actualSt' pcs (k (instr ^. #sample)) `S.cons` konts) more
+                Normal ->
+                  case project @(MonadF :&: Pos) term of
+                    Just (Ret vterm :&: _pos) ->
+                      case vterm of
+                        Hole (I val) -> go (Result val pcs st `S.cons` results) konts more
+                        _other -> error "iterate: expected first-order value on normalized term"
+                    _other -> error "iterate: expected (Ret _) on normalized term"
+
+explore :: SerialLogging (Work (SymM a)) -> SerialLogging (Result a)
+explore work = do
+  (results, more) <- lift $ iterate work
+  hasMore <- lift $ S.uncons @S.SerialT more
+  case hasMore of
+    Just _ -> S.wSerial results (explore more)
+    Nothing -> results
+
+seval :: Cxt Hole Carrier I (SymM a) -> SerialLogging (Result a)
+seval term = explore . S.fromList $ [Continue (SymState empty DL.empty 0) [] term]
