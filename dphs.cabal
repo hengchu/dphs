@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 95c61b346728bdbdbc512651016b0e7565df58a737dfaa4ce272140fe604c7b7
+-- hash: 7710be315b2badd9b92235dbd857ad136d971ad1028059f811aed2f5cf44a710
 
 name:           dphs
 version:        0.1.0.0
@@ -35,9 +35,11 @@ library
       Data.DPHS.Examples.Fuzzi.LogisticRegression
       Data.DPHS.Fuzzi
       Data.DPHS.HXFunctor
+      Data.DPHS.Logging
       Data.DPHS.Name
       Data.DPHS.Precedence
       Data.DPHS.SEval
+      Data.DPHS.SolverZ3
       Data.DPHS.SrcLoc
       Data.DPHS.Symbolic
       Data.DPHS.Syntactic
@@ -54,13 +56,17 @@ library
   build-depends:
       ansi-wl-pprint >=0.6.9 && <0.7
     , base >=4.8 && <5
+    , bytestring >=0.10.8.2 && <0.11
     , compdata >=0.12 && <1.0
     , containers >=0.6.2.1 && <1.0
     , dlist >=1.0 && <1.1
     , exceptions >=0.10.4 && <1.0
+    , monad-logger >=0.3.35 && <0.4
     , mtl >=2.2 && <2.3
     , optics >=0.3 && <1.0
     , text >=1.2.4.0 && <1.3
+    , vector >=0.12 && <0.13
+    , z3 >=408.2 && <409
   default-language: Haskell2010
 
 executable dphs-exe
@@ -73,14 +79,18 @@ executable dphs-exe
   build-depends:
       ansi-wl-pprint >=0.6.9 && <0.7
     , base >=4.8 && <5
+    , bytestring >=0.10.8.2 && <0.11
     , compdata >=0.12 && <1.0
     , containers >=0.6.2.1 && <1.0
     , dlist >=1.0 && <1.1
     , dphs
     , exceptions >=0.10.4 && <1.0
+    , monad-logger >=0.3.35 && <0.4
     , mtl >=2.2 && <2.3
     , optics >=0.3 && <1.0
     , text >=1.2.4.0 && <1.3
+    , vector >=0.12 && <0.13
+    , z3 >=408.2 && <409
   default-language: Haskell2010
 
 test-suite dphs-test
@@ -88,6 +98,7 @@ test-suite dphs-test
   main-is: Spec.hs
   other-modules:
       SpecSEval
+      SpecSolverZ3
       Paths_dphs
   hs-source-dirs:
       test
@@ -97,6 +108,7 @@ test-suite dphs-test
       QuickCheck >=2.13.2 && <2.14
     , ansi-wl-pprint >=0.6.9 && <0.7
     , base >=4.8 && <5
+    , bytestring >=0.10.8.2 && <0.11
     , compdata >=0.12 && <1.0
     , containers >=0.6.2.1 && <1.0
     , dlist >=1.0 && <1.1
@@ -104,7 +116,10 @@ test-suite dphs-test
     , exceptions >=0.10.4 && <1.0
     , hspec >=2.7.4 && <2.8
     , hspec-expectations >=0.8.2 && <0.9
+    , monad-logger >=0.3.35 && <0.4
     , mtl >=2.2 && <2.3
     , optics >=0.3 && <1.0
     , text >=1.2.4.0 && <1.3
+    , vector >=0.12 && <0.13
+    , z3 >=408.2 && <409
   default-language: Haskell2010

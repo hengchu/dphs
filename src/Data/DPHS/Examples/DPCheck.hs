@@ -16,7 +16,7 @@ type DPCheck m num = ( num ~ Noise m
                      , Typeable m
                      , Typeable num
                      , SynOrd num
-                     ) 
+                     )
 
 trivial :: forall m num.
   DPCheck m num => EmMon (Term (WithPos DPCheckF)) m num

@@ -7,12 +7,13 @@ import Data.DPHS.Name
 import Data.DPHS.Typecheck.Fuzzi
 
 import Data.Either
-import qualified Data.Map.Strict as M 
+import qualified Data.Map.Strict as M
 import Control.Monad.State.Strict
 
 import Test.Hspec
 
-import qualified SpecSEval as SEvalTests 
+import qualified SpecSEval as SEvalTests
+import qualified SpecSolverZ3 as SolverZ3Tests
 
 preprocessTests :: SpecWith (Arg Expectation)
 preprocessTests = describe "Data.DPHS.Fuzzi.preprocess" $ do
@@ -82,10 +83,11 @@ simpleTypeCheckingTests = describe "Data.DPHS.Typecheck.Fuzzi" $ do
         t `shouldBe` C
         eps `shouldSatisfy` (<= 17)
         dlt `shouldBe` (1e-6)
-    
+
 main :: IO ()
 main = hspec $ do
   preprocessTests
   sensitivityTests
   simpleTypeCheckingTests
   SEvalTests.sevalTests
+  SolverZ3Tests.consistencyTests
