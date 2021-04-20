@@ -17,7 +17,7 @@
 #
 # resolver: ./custom-snapshot.yaml
 # resolver: https://example.com/snapshots/2018-01-01.yaml
-resolver: lts-16.18
+resolver: lts-17.9
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -52,9 +52,15 @@ extra-deps:
 - optics-th-0.3.0.2@sha256:e786f290c237a3236eda8814957da882227c05ed063d865d4ab1af08d638244f,2038
 - z3-408.2@sha256:1f8b6ccbcc6d06a6701900a09fcfcbaf86ed8a8495615710bef4da5cdb073a3f,4226
 - dlist-1.0@sha256:124cb3aa1decebd5171b46601b1f74cca6cfae12d266ace3799b86dd05ef7cb4,3560
+- mwc-random-0.15.0.1@sha256:4b7c9e25fa74ddba63b1f67500e55ae137622a4d94e8ee9a1710c1caa89858c7,3244
+- random-1.2.0@sha256:4321209c8faedc034810ea8ed0dbc4a36f1a1df97b75af024219f2f533da57de,6094
+- streamly-0.7.2@sha256:2dbcbd2d807b5465a281bde1a71a21f1e1e1b00be93b23083a868a07dc76de95,28286
+- primitive-0.7.0.1@sha256:a381571c36edc7dca28b77fe8159b43c14c640087ec5946adacf949feec64231,3433
 
 # Override default flag values for local packages and extra-deps
-# flags: {}
+flags:
+  QuickCheck:
+    old-random: false
 
 # Extra package databases containing global packages
 # extra-package-dbs: []

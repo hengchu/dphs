@@ -35,6 +35,7 @@ dependencies:
 - vector >= 0.12 && <0.13
 - streamly >= 0.7.2 && < 0.8
 - transformers >= 0.5.6.2 && < 0.6
+- mwc-random >= 0.15 && < 1.0
 
 ghc-options:
 - -Wall
@@ -113,7 +114,7 @@ tests:
     - dphs
     - hspec >= 2.7.4 && < 2.8
     - hspec-expectations >= 0.8.2 && < 0.9
-    - QuickCheck >= 2.13.2 && < 2.14
+    - QuickCheck >= 2.14.2 && < 2.15
     default-extensions:
     - DataKinds
     - DeriveGeneric

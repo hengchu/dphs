@@ -73,6 +73,15 @@ instance SynOrd SExp where
   a .>= b = SBool (SGe a b)
   a .> b  = SBool (SGt a b)
 
+data MatchResult =
+  Static Bool | Symbolic SBool
+  deriving (Show, Eq)
+
+-- |'Match' is instantiated for types 'a' and 'b' that can be tested for
+-- equality, either statically, or by the SMT solver.
+class Match a b where
+  match :: a -> b -> MatchResult
+
 parensPrec :: Prec -> Prec -> Doc -> Doc
 parensPrec cxt op doc =
   if cxt > op then parens doc else doc
@@ -108,6 +117,6 @@ prettySExp (SAnd lhs rhs) cxt = IMPL_PRETTY_SEXP("&&")
 prettySExp (SOr lhs rhs) cxt = IMPL_PRETTY_SEXP("||")
 
 showSExp :: SExp -> ShowS
-showSExp t = displayS . renderPretty 1.0 80 $ yellow (prettySExp t (precInt 0)) 
+showSExp t = displayS . renderPretty 1.0 80 $ yellow (prettySExp t (precInt 0))
 
 #undef IMPL_PRETTY_SEXP
