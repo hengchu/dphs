@@ -15,8 +15,10 @@ import qualified Data.Vector as V
 import Data.DPHS.Syntax
 import Data.DPHS.DPCheck
 import Data.DPHS.SrcLoc
+import Data.DPHS.HXFunctor
 
 import Data.Comp.Multi
+import qualified Data.Comp.Ops as DCO
 
 data Call = Call {
   cCenter :: Double,
@@ -94,6 +96,16 @@ instance Fractional a => Fractional (InstrValue a) where
   a / b = InstrValue (a ^. #provenance / b ^. #provenance) (a ^. #value / b ^. #value)
   fromRational v = InstrValue (fromRational v) (fromRational v)
 
+instance SynOrd a => SynOrd (InstrValue a) where
+  type Cmp (InstrValue a) = Cmp a
+
+  a .== b = a ^. #value .== b ^. #value
+  a ./= b = a ^. #value ./= b ^. #value
+  a .<  b = a ^. #value .<  b ^. #value
+  a .<= b = a ^. #value .<= b ^. #value
+  a .>  b = a ^. #value .>  b ^. #value
+  a .>= b = a ^. #value .>= b ^. #value
+
 instance NoiseM InstrDist where
   type Noise InstrDist = InstrValue Double
 
@@ -104,7 +116,7 @@ instance NoiseM InstrDist where
 
     coin <- bernoulli 0.5 prng
     sample <- exponential width prng
-    let actualSample = if coin then sample else -sample
+    let actualSample = center ^. #value + if coin then sample else -sample
         thisCall = Call (center ^. #value) width actualSample
         idx = length trace
         shape = Data.DPHS.TEval.Laplace idx (center ^. #provenance) width
@@ -116,6 +128,8 @@ sample :: InstrDist a -> IO a
 sample m =
   initializeInstrDistState >>= runReaderT (runInstrDist_ m)
 
+-- |Sample from the given distribution, while producing a trace of calls to the
+-- laplace noise command.
 instrument :: InstrDist a -> IO (V.Vector Call, a)
 instrument m = do
   state <- initializeInstrDistState
@@ -127,54 +141,63 @@ instrument m = do
 
 type Carrier = WithPos DPCheckF
 
-teval :: Cxt Hole Carrier I a -> a
-teval (Hole (I a)) = a
+-- |Instrumented interpretation of a 'Carrier' term, fixed at the instrumentated
+-- distribution monad type.
+instrEval :: Term Carrier (InstrDist a) -> InstrDist a
+instrEval = eval . xtoCxt
+
+-- |Big-step evaluation of 'Carrier' terms.
+eval :: Cxt Hole Carrier I a -> a
+eval (Hole (I a)) = a
 
 -- All XLambdaF cases
-teval (project @(XLambdaF :&: Pos) -> Just (XLam fun :&: _pos)) = \arg ->
-  teval (fun (Hole (I arg)))
-teval (project @(XLambdaF :&: Pos) -> Just (XApp f arg :&: _pos)) =
-  (teval f) (teval arg)
-teval (project @(XLambdaF :&: Pos) -> Just (XVar v :&: pos)) =
-  error $ "teval: out-of-scope variable " ++ show v ++ " at " ++ show pos
+eval (project @(XLambdaF :&: Pos) -> Just (XLam fun :&: _pos)) = \arg ->
+  eval (fun (Hole (I arg)))
+eval (project @(XLambdaF :&: Pos) -> Just (XApp f arg :&: _pos)) =
+  (eval f) (eval arg)
+eval (project @(XLambdaF :&: Pos) -> Just (XVar v :&: pos)) =
+  error $ "eval: out-of-scope variable " ++ show v ++ " at " ++ show pos
 
 -- All MonadF cases
-teval (project @(MonadF :&: Pos) -> Just (Bind m k :&: _pos)) = (teval m) >>= (teval k)
-teval (project @(MonadF :&: Pos) -> Just (Ret a :&: _pos)) = return (teval a)
+eval (project @(MonadF :&: Pos) -> Just (Bind m k :&: _pos)) = (eval m) >>= (eval k)
+eval (project @(MonadF :&: Pos) -> Just (Ret a :&: _pos)) = return (eval a)
 
 -- All EffF cases
-teval (project @(EffF :&: Pos) -> Just (Branch (cond :: _ bool) a b :&: pos)) =
+eval (project @(EffF :&: Pos) -> Just (Branch (cond :: _ bool) a b :&: pos)) =
   case eqTypeRep (typeRep @bool) (typeRep @Bool) of
-    Just HRefl -> if (teval cond) then (teval a) else (teval b)
-    Nothing -> error $ "teval: expected Bool for branch guard at " ++ show pos
-teval (project @(EffF :&: Pos) ->
+    Just HRefl -> if (eval cond) then (eval a) else (eval b)
+    Nothing -> error $ "eval: expected Bool for branch guard at " ++ show pos
+eval (project @(EffF :&: Pos) ->
        Just (Data.DPHS.DPCheck.Laplace center width :&: _pos)) =
-  laplaceNoise (teval center) width
+  laplaceNoise (eval center) width
 
 -- All CompareF cases
-teval (project @(CompareF :&: Pos) -> Just (IsEq a b :&: _pos)) =
-  teval a .== teval b
-teval (project @(CompareF :&: Pos) -> Just (IsNeq a b :&: _pos)) =
-  teval a ./= teval b
-teval (project @(CompareF :&: Pos) -> Just (IsLt a b :&: _pos)) =
-  teval a .< teval b
-teval (project @(CompareF :&: Pos) -> Just (IsLe a b :&: _pos)) =
-  teval a .<= teval b
-teval (project @(CompareF :&: Pos) -> Just (IsGt a b :&: _pos)) =
-  teval a .> teval b
-teval (project @(CompareF :&: Pos) -> Just (IsGe a b :&: _pos)) =
-  teval a .>= teval b
-teval (project @(CompareF :&: Pos) -> Just (Neg a :&: _pos)) =
-  neg (teval a)
-teval (project @(CompareF :&: Pos) -> Just (Or a b :&: _pos)) =
-  teval a .|| teval b
+eval (project @(CompareF :&: Pos) -> Just (IsEq a b :&: _pos)) =
+  eval a .== eval b
+eval (project @(CompareF :&: Pos) -> Just (IsNeq a b :&: _pos)) =
+  eval a ./= eval b
+eval (project @(CompareF :&: Pos) -> Just (IsLt a b :&: _pos)) =
+  eval a .< eval b
+eval (project @(CompareF :&: Pos) -> Just (IsLe a b :&: _pos)) =
+  eval a .<= eval b
+eval (project @(CompareF :&: Pos) -> Just (IsGt a b :&: _pos)) =
+  eval a .> eval b
+eval (project @(CompareF :&: Pos) -> Just (IsGe a b :&: _pos)) =
+  eval a .>= eval b
+eval (project @(CompareF :&: Pos) -> Just (Neg a :&: _pos)) =
+  neg (eval a)
+eval (project @(CompareF :&: Pos) -> Just (Or a b :&: _pos)) =
+  eval a .|| eval b
 
 -- All ArithF cases
-teval (project @(ArithF :&: Pos) -> Just (IntLit v :&: _pos)) = fromIntegral v
-teval (project @(ArithF :&: Pos) -> Just (FracLit v :&: _pos)) = fromRational v
-teval (project @(ArithF :&: Pos) -> Just (Add a b :&: _pos)) = teval a + teval b
-teval (project @(ArithF :&: Pos) -> Just (Sub a b :&: _pos)) = teval a - teval b
-teval (project @(ArithF :&: Pos) -> Just (Data.DPHS.Syntax.Abs a :&: _pos)) = abs (teval a)
-teval (project @(ArithF :&: Pos) -> Just (Signum a :&: _pos)) = signum (teval a)
-teval (project @(ArithF :&: Pos) -> Just (Data.DPHS.Syntax.Mult a b :&: _pos)) = teval a * teval b
-teval (project @(ArithF :&: Pos) -> Just (Data.DPHS.Syntax.Div a b :&: _pos)) = teval a / teval b
+eval (project @(ArithF :&: Pos) -> Just (IntLit v :&: _pos)) = fromIntegral v
+eval (project @(ArithF :&: Pos) -> Just (FracLit v :&: _pos)) = fromRational v
+eval (project @(ArithF :&: Pos) -> Just (Add a b :&: _pos)) = eval a + eval b
+eval (project @(ArithF :&: Pos) -> Just (Sub a b :&: _pos)) = eval a - eval b
+eval (project @(ArithF :&: Pos) -> Just (Data.DPHS.Syntax.Abs a :&: _pos)) = abs (eval a)
+eval (project @(ArithF :&: Pos) -> Just (Signum a :&: _pos)) = signum (eval a)
+eval (project @(ArithF :&: Pos) -> Just (Data.DPHS.Syntax.Mult a b :&: _pos)) = eval a * eval b
+eval (project @(ArithF :&: Pos) -> Just (Data.DPHS.Syntax.Div a b :&: _pos)) = eval a / eval b
+
+eval (Term (projectA -> _other DCO.:&: pos)) =
+  error $ "eval: unhandled syntactic form at position " ++ show pos

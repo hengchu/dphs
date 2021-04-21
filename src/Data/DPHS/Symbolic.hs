@@ -82,6 +82,20 @@ data MatchResult =
 class Match a b where
   match :: a -> b -> MatchResult
 
+class MatchOrd a b where
+  matchOrd :: a -> b -> Ordering
+
+instance {-# OVERLAPPING #-}
+  MatchOrd a b => Match a b where
+  match a b =
+    case matchOrd a b of
+      EQ -> Static True
+      _  -> Static False
+
+instance {-# OVERLAPPING #-}
+  Ord a => MatchOrd a a where
+  matchOrd = compare
+
 parensPrec :: Prec -> Prec -> Doc -> Doc
 parensPrec cxt op doc =
   if cxt > op then parens doc else doc

@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 61099192c6f18118aa8876bd7b11d1b505b62900d11a2892a0bf619be0d54ead
+-- hash: 3a4e304fa2089e588827baaedbcc5f03a27f2f9db90f0f0a26db68823dc4c511
 
 name:           dphs
 version:        0.1.0.0
@@ -44,6 +44,7 @@ library
       Data.DPHS.Symbolic
       Data.DPHS.Syntactic
       Data.DPHS.Syntax
+      Data.DPHS.Testing
       Data.DPHS.TEval
       Data.DPHS.Typecheck.Fuzzi
       Data.DPHS.Types
