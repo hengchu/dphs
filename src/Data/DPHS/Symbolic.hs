@@ -29,7 +29,15 @@ data SExp :: * where
   SNeg    :: SExp -> SExp
   SAnd    :: SExp -> SExp -> SExp
   SOr     :: SExp -> SExp -> SExp
+  STrue   :: SExp
+  SFalse  :: SExp
   deriving (Eq)
+
+strue :: SBool
+strue = SBool STrue
+
+sfalse :: SBool
+sfalse = SBool SFalse
 
 newtype SInt = SInt SExp
   deriving (Show, SynOrd, Num) via SExp
@@ -129,6 +137,8 @@ prettySExp (SNeg t) cxt =
   text "!" <> (parensPrec cxt (prec @"!") $ prettySExp t (prec @"!"))
 prettySExp (SAnd lhs rhs) cxt = IMPL_PRETTY_SEXP("&&")
 prettySExp (SOr lhs rhs) cxt = IMPL_PRETTY_SEXP("||")
+prettySExp STrue _ = text "True"
+prettySExp SFalse _ = text "False"
 
 showSExp :: SExp -> ShowS
 showSExp t = displayS . renderPretty 1.0 80 $ yellow (prettySExp t (precInt 0))

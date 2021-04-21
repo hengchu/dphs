@@ -3,11 +3,11 @@
 module Data.DPHS.Testing where
 
 import Data.DPHS.DPCheck
-import Data.DPHS.HXFunctor
 import Data.DPHS.SEval
 import Data.DPHS.SrcLoc
 import Data.DPHS.TEval
 import Data.DPHS.Symbolic
+import Data.DPHS.Syntax
 import Data.DPHS.Logging
 
 import Optics
@@ -17,6 +17,8 @@ import Control.Monad.Catch
 import Control.Monad
 
 import Data.Comp.Multi
+import qualified Streamly.Prelude as S
+import qualified Streamly as S
 
 -- | Each key in a 'Bucket' is a group of traces that share a coupling, under
 -- the pointwise equality proof technique.
@@ -24,7 +26,8 @@ type Bucket a = M.Map (Key a) (V.Vector (V.Vector Call, Val a))
 
 data DPCheckError =
   DifferentTraceSize String -- The given result a has different trace size.
-  deriving (Show, Eq, Ord)
+  | DivergingSymbolicState SymState SymState
+  deriving (Show, Eq)
 
 instance Exception DPCheckError
 
@@ -68,18 +71,26 @@ buildBucket ((trace, result):more) = do
             throwM (DifferentTraceSize (show result))
           return (Just (tup:xs))
 
-type Model = ()
+data Model a = Model {
+  mResultEquality :: a -> SBool
+  , mPathChoices :: [SBool]
+  , mSymbolicState :: SymState
+  }
+
+makeFieldLabelsWith abbreviatedFieldLabels ''Model
 
 type GeneralStrategy a b =
   Bucket a -- ^the bucket of profiled inputs
   -> SerialLogging (Result b) -- ^a (potentially infinite) stream of symbolic results
-  -> LoggingT IO (SerialLogging Model) -- ^a finite stream of models to be
-                                       -- checked: each model represents the
-                                       -- "approximate proof" for a single
-                                       -- output under the pointwise proof
-                                       -- technique. Note that this stream must
-                                       -- be finite, because the bucket only has
-                                       -- finite amount of keys in it.
+  -> LoggingT IO (SerialLogging (Model (Val a))) -- ^a finite stream of models
+                                                 -- to be checked: each model
+                                                 -- represents the "approximate
+                                                 -- proof" for a single output
+                                                 -- under the pointwise proof
+                                                 -- technique. Note that this
+                                                 -- stream must be finite,
+                                                 -- because the bucket only has
+                                                 -- finite amount of keys in it.
 
 data SEvalStrategy a b where
   Exhaust :: SEvalStrategy a b -- ^Use all of the symbolic results --- does not
@@ -93,7 +104,10 @@ data SEvalStrategy a b where
   General :: GeneralStrategy a b -> SEvalStrategy a b
 
 exhaustOrd ::
-  forall a b. MatchOrd (Key a) b => GeneralStrategy a b
+  forall a b. ( Ord (Key a)
+              , Match (Val a) b
+              , MatchOrd (Key a) b
+              ) => GeneralStrategy a b
 exhaustOrd bkt stream =
   exhaustOrdImpl @a @b M.empty (V.fromList (M.toList bkt)) stream
 
@@ -118,14 +132,59 @@ binSearch arr k =
                  EQ -> go start mid
                  GT -> go start mid
 
+conjunct :: [SBool] -> SBool
+conjunct = foldr (.&&) strue
+
+disjunct :: [SBool] -> SBool
+disjunct = foldr (.||) sfalse
+
 exhaustOrdImpl ::
-  forall a b. MatchOrd (Key a) b
-  => M.Map (Key a) Model
-  -> V.Vector (Key a, V.Vector (V.Vector Call, Val a))
-  -> SerialLogging (Result b)
-  -> LoggingT IO (SerialLogging Model)
+  forall a b.
+  ( Ord (Key a)
+  , Match (Val a) b
+  , MatchOrd (Key a) b
+  ) => M.Map (Key a) (Model (Val a))
+    -> V.Vector (Key a, V.Vector (V.Vector Call, Val a))
+    -> SerialLogging (Result b)
+    -> LoggingT IO (SerialLogging (Model (Val a)))
 exhaustOrdImpl models bkt stream = do
-  undefined
+  symResult <- S.uncons @S.SerialT stream
+  case symResult of
+    Nothing -> return (S.fromList (fmap snd (M.toList models)))
+    Just (Result symVal symPCs symState, moreStream) -> do
+      case binSearch bkt symVal of
+        Nothing  ->
+          -- TODO: log a warning here? we just find a symbolic value that does
+          -- not match any result from the bucket. so this must be a very rare
+          -- outcome given the internal randomness of the program.
+          exhaustOrdImpl @a @b models bkt moreStream
+        Just idx -> do
+          -- each 'trace' in 'traces' needs to be paired with the disjunction of
+          -- all paths. but we cannot pair it here yet... because we may have
+          -- not seen all paths for this output yet.
+          let (key, _) = bkt V.! idx
+
+              buildEquality r =
+                case match r symVal of
+                  Static True -> strue
+                  Static False -> sfalse
+                  Symbolic eqConstraint -> eqConstraint
+
+              modify Nothing = return . Just $ Model buildEquality [conjunct symPCs] symState
+              modify (Just model) = do
+                -- TODO: this check may be unnecessarily strict we could push
+                -- access to the symbolic state into the final step where
+                -- symbolic laplace sample expressions are generated from shift
+                -- symbols.
+                when (model ^. #symbolicState /= symState) $
+                  throwM (DivergingSymbolicState (model ^. #symbolicState) symState)
+                let extendedModel =
+                      model & #resultEquality %~ (\bldEq r -> bldEq r .|| buildEquality r)
+                            & #pathChoices %~ (conjunct symPCs:)
+                return (Just extendedModel)
+
+          extendedModels <- M.alterF modify key models
+          exhaustOrdImpl @a @b extendedModels bkt moreStream
 
 sevalStrategy :: SEvalStrategy a b
               -> GeneralStrategy a b

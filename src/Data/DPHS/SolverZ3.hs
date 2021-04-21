@@ -95,6 +95,8 @@ toZ3AST (SOr a b) = do
   a' <- toZ3AST a
   b' <- toZ3AST b
   mkOr [a', b']
+toZ3AST STrue = mkTrue
+toZ3AST SFalse = mkFalse
 
 data Consistency =
   Ok | Inconsistent deriving (Show, Eq, Ord)
