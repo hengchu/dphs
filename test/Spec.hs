@@ -14,6 +14,7 @@ import Test.Hspec
 
 import qualified SpecSEval as SEvalTests
 import qualified SpecSolverZ3 as SolverZ3Tests
+import qualified SpecTesting as TestingTests
 
 preprocessTests :: SpecWith (Arg Expectation)
 preprocessTests = describe "Data.DPHS.Fuzzi.preprocess" $ do
@@ -91,3 +92,4 @@ main = hspec $ do
   simpleTypeCheckingTests
   SEvalTests.sevalTests
   SolverZ3Tests.consistencyTests
+  TestingTests.coupleTests

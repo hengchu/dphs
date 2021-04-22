@@ -9,6 +9,7 @@ import Optics
 import Prelude hiding (iterate)
 import Text.Printf
 import qualified Data.DList as DL
+import qualified Data.Vector as V
 import qualified Streamly as S
 import qualified Streamly.Prelude as S
 
@@ -327,26 +328,38 @@ data Work a where
            -> Cxt Hole Carrier I a
            -> Work a
 
-data Result a = Result {
-  rValue :: a
-  , rPathConditions :: PathConditions
-  , rSymbolicState :: SymState
+data IntermediateResult a = IntermediateResult {
+  irValue :: a
+  , irPathConditions :: PathConditions
+  , irSymbolicState :: SymState
   }
   deriving (Show, Eq)
 
+data Result a = Result {
+  rValue :: a
+  , rPathConditions :: PathConditions
+  , rSymbolicTrace :: V.Vector SymInstr
+  }
+  deriving (Show, Eq)
+
+makeFieldLabelsWith abbreviatedFieldLabels ''IntermediateResult
 makeFieldLabelsWith abbreviatedFieldLabels ''Result
+
+finalizeResult :: IntermediateResult a -> Result a
+finalizeResult ir =
+  Result (ir ^. #value) (ir ^. #pathConditions) (V.fromList . DL.toList $ ir ^. #symbolicState % #symbolicTrace)
 
 type SerialLogging = S.SerialT (LoggingT IO)
 
 iterate :: SerialLogging (Work (SymM a))
-        ->  LoggingT IO ( SerialLogging (Result a)
+        ->  LoggingT IO ( SerialLogging (IntermediateResult a)
                         , SerialLogging (Work (SymM a))
                         )
 iterate = go S.nil S.nil
-  where go :: SerialLogging (Result a)
+  where go :: SerialLogging (IntermediateResult a)
            -> SerialLogging (Work (SymM a)) -- ^work list of items that has been stepped in this iteration already
            -> SerialLogging (Work (SymM a)) -- ^work list of items to be stepped in this iteration
-           -> LoggingT IO ( SerialLogging (Result a)
+           -> LoggingT IO ( SerialLogging (IntermediateResult a)
                           , SerialLogging (Work (SymM a))
                           )
         go results konts worklist = do
@@ -388,11 +401,11 @@ iterate = go S.nil S.nil
                   case project @(MonadF :&: Pos) term of
                     Just (Ret vterm :&: _pos) ->
                       case vterm of
-                        Hole (I val) -> go (Result val pcs st `S.cons` results) konts more
+                        Hole (I val) -> go (IntermediateResult val pcs st `S.cons` results) konts more
                         _other -> error "iterate: expected first-order value on normalized term"
                     _other -> error "iterate: expected (Ret _) on normalized term"
 
-explore :: SerialLogging (Work (SymM a)) -> SerialLogging (Result a)
+explore :: SerialLogging (Work (SymM a)) -> SerialLogging (IntermediateResult a)
 explore work = do
   (results, more) <- lift $ iterate work
   hasMore <- lift $ S.uncons @S.SerialT more
@@ -401,4 +414,7 @@ explore work = do
     Nothing -> results
 
 seval :: Cxt Hole Carrier I (SymM a) -> SerialLogging (Result a)
-seval term = explore . S.fromList $ [Continue (SymState empty DL.empty 0) [] term]
+seval term =
+  S.map finalizeResult
+  $ explore . S.fromList
+  $ [Continue (SymState empty DL.empty 0) [] term]

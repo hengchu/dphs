@@ -15,6 +15,7 @@ import qualified Data.Map.Strict as M
 import qualified Data.Vector as V
 import Control.Monad.Catch
 import Control.Monad
+import Data.Semigroup
 
 import Data.Comp.Multi
 import qualified Streamly.Prelude as S
@@ -71,45 +72,83 @@ buildBucket ((trace, result):more) = do
             throwM (DifferentTraceSize (show result))
           return (Just (tup:xs))
 
-data Model a = Model {
-  mResultEquality :: a -> SBool
-  , mPathChoices :: [SBool]
-  , mSymbolicState :: SymState
-  }
+-- There are a few cases of the symbolic execution result.
 
-makeFieldLabelsWith abbreviatedFieldLabels ''Model
+-- 1. outputs with fully determined shapes (outputs with Eq, Ord, and is not a symbolic output)
+-- 2. purely symbolic outputs
+-- 3. containers (we do not have symbolic containers) with purely symbolic outputs
+-- 4. containers with mixed symbolic and static outputs
 
-type GeneralStrategy a b =
-  Bucket a -- ^the bucket of profiled inputs
-  -> SerialLogging (Result b) -- ^a (potentially infinite) stream of symbolic results
-  -> LoggingT IO (SerialLogging (Model (Val a))) -- ^a finite stream of models
-                                                 -- to be checked: each model
-                                                 -- represents the "approximate
-                                                 -- proof" for a single output
-                                                 -- under the pointwise proof
-                                                 -- technique. Note that this
-                                                 -- stream must be finite,
-                                                 -- because the bucket only has
-                                                 -- finite amount of keys in it.
+-- 1. we can do optimization
+-- 2. nothing can be ruled out, all paths need to be considered for each trace
+-- 3. can statically rule out some matches
+-- 4. can statically rule out some matches
 
-data SEvalStrategy a b where
-  Exhaust :: SEvalStrategy a b -- ^Use all of the symbolic results --- does not
-                               -- terminate if the program is infinite.
-  ExhaustOrd :: MatchOrd a b => SEvalStrategy a b -- ^Use all of the symbolic
-                                                  -- results, but use a more
-                                                  -- efficient matching
-                                                  -- algorithm --- does not
-                                                  -- terminate if the program is
-                                                  -- infinite.
-  General :: GeneralStrategy a b -> SEvalStrategy a b
+-- So, 2 is the most general case. We need to present all path conditions, and
+-- all symbolic trace to a bucket in the case of 2, and build a disjunction
+-- among all symbolic paths.
 
-exhaustOrd ::
-  forall a b. ( Ord (Key a)
-              , Match (Val a) b
-              , MatchOrd (Key a) b
-              ) => GeneralStrategy a b
-exhaustOrd bkt stream =
-  exhaustOrdImpl @a @b M.empty (V.fromList (M.toList bkt)) stream
+-- We can use defunctionalized "strategy" combinators to let the user enable
+-- various optimizations in a type-safe manner, by requiring typeclass
+-- constraints on those outputs that can be optimized.
+
+-- optimizations:
+-- 1. pre-disjunction of path conditions?
+-- 1. if output has Ord, binary search to match path with bucket?
+-- 3. not much...
+-- 4. not much...
+
+-- In the most general case, we essentially have a table like this...
+--     pc1 pc2 pc3 pc4 ... pc_n
+-- tr1   \/  \/  \/   \/  \/    (disjunction between path conditions)
+--    /\                        (conjunction between traces)
+-- tr2
+--    /\
+-- tr3
+--    /\
+-- ...
+--    /\
+-- tr_n
+
+-- but we want to delay building the disjunction until we actually receive the
+-- trace. because knowing the trace let's us rule out some impossible matches,
+-- resulting in smaller SMT model.
+
+unpackSymSample :: SReal -> (Int, SReal, Double)
+unpackSymSample (SReal (SLap idx center width)) = (idx, SReal center, width)
+unpackSymSample other = error $ "unpackSymSample: expecting SLap constructor, got " ++ show other
+
+-- |Couple a concrete trace with a symbolic trace. If we can statically
+-- determinine that these two traces cannot be coupled, then produce 'Nothing'.
+couple ::
+  Match a b
+  => V.Vector Call
+  -> a
+  -> PathConditions
+  -> V.Vector SymInstr
+  -> b
+  -> Maybe SBool
+couple ctrace cresult pcs strace sresult =
+  case ( length strace > length ctrace
+       , match cresult sresult
+       ) of
+    (True, _)  -> Nothing
+    (_, Static False) -> Nothing
+    (False, Static True) -> do
+      costBounds <- V.zipWithM makeCostBound ctrace strace
+      return (conjunct costBounds .&& conjunct pcs)
+    (False, Symbolic equality) -> do
+      costBounds <- V.zipWithM makeCostBound ctrace strace
+      return (conjunct costBounds .&& conjunct pcs .&& equality)
+
+  where makeCostBound :: Call -> SymInstr -> Maybe SBool
+        makeCostBound call sinstr =
+          let (_, center, width) = unpackSymSample (sinstr ^. #sample)
+              cWidth = realToFrac (call ^. #width)
+              lowerbound = abs (sinstr ^. #shift + center - (realToFrac $ call ^. #center)) / cWidth
+          in if width == call ^. #width
+             then Just (sinstr ^. #cost .>= lowerbound)
+             else Nothing
 
 -- |Find the index of a matching group of trace, using binary search.
 binSearch :: MatchOrd k b => V.Vector (k, v) -> b -> Maybe Int
@@ -132,63 +171,11 @@ binSearch arr k =
                  EQ -> go start mid
                  GT -> go start mid
 
-conjunct :: [SBool] -> SBool
+conjunct :: Foldable t => t SBool -> SBool
 conjunct = foldr (.&&) strue
 
-disjunct :: [SBool] -> SBool
+disjunct :: Foldable t => t SBool -> SBool
 disjunct = foldr (.||) sfalse
-
-exhaustOrdImpl ::
-  forall a b.
-  ( Ord (Key a)
-  , Match (Val a) b
-  , MatchOrd (Key a) b
-  ) => M.Map (Key a) (Model (Val a))
-    -> V.Vector (Key a, V.Vector (V.Vector Call, Val a))
-    -> SerialLogging (Result b)
-    -> LoggingT IO (SerialLogging (Model (Val a)))
-exhaustOrdImpl models bkt stream = do
-  symResult <- S.uncons @S.SerialT stream
-  case symResult of
-    Nothing -> return (S.fromList (fmap snd (M.toList models)))
-    Just (Result symVal symPCs symState, moreStream) -> do
-      case binSearch bkt symVal of
-        Nothing  ->
-          -- TODO: log a warning here? we just find a symbolic value that does
-          -- not match any result from the bucket. so this must be a very rare
-          -- outcome given the internal randomness of the program.
-          exhaustOrdImpl @a @b models bkt moreStream
-        Just idx -> do
-          -- each 'trace' in 'traces' needs to be paired with the disjunction of
-          -- all paths. but we cannot pair it here yet... because we may have
-          -- not seen all paths for this output yet.
-          let (key, _) = bkt V.! idx
-
-              buildEquality r =
-                case match r symVal of
-                  Static True -> strue
-                  Static False -> sfalse
-                  Symbolic eqConstraint -> eqConstraint
-
-              modify Nothing = return . Just $ Model buildEquality [conjunct symPCs] symState
-              modify (Just model) = do
-                -- TODO: this check may be unnecessarily strict we could push
-                -- access to the symbolic state into the final step where
-                -- symbolic laplace sample expressions are generated from shift
-                -- symbols.
-                when (model ^. #symbolicState /= symState) $
-                  throwM (DivergingSymbolicState (model ^. #symbolicState) symState)
-                let extendedModel =
-                      model & #resultEquality %~ (\bldEq r -> bldEq r .|| buildEquality r)
-                            & #pathChoices %~ (conjunct symPCs:)
-                return (Just extendedModel)
-
-          extendedModels <- M.alterF modify key models
-          exhaustOrdImpl @a @b extendedModels bkt moreStream
-
-sevalStrategy :: SEvalStrategy a b
-              -> GeneralStrategy a b
-sevalStrategy = undefined
 
 instance GroupBy Int where
   type Key Int = Int

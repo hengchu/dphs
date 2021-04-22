@@ -144,3 +144,25 @@ showSExp :: SExp -> ShowS
 showSExp t = displayS . renderPretty 1.0 80 $ yellow (prettySExp t (precInt 0))
 
 #undef IMPL_PRETTY_SEXP
+
+-- |The 'Semigroup' instance on 'MatchResult' takes the conjunction of two match
+-- results.
+instance Semigroup MatchResult where
+  Static True <> a = a
+  a <> Static True = a
+  Static False <> _ = Static False
+  _ <> Static False = Static False
+  Symbolic a <> Symbolic b = Symbolic (a .&& b)
+
+instance {-# OVERLAPPING #-}
+  Match Double SReal where
+  match v sv = Symbolic (realToFrac v .== sv)
+
+instance {-# OVERLAPPING #-}
+  Match Int SInt where
+  match v sv = Symbolic (fromIntegral v .== sv)
+
+instance {-# OVERLAPPING #-}
+  (Match a sa, Match b sb) => Match (a, b) (sa, sb) where
+  match (va, vb) (sva, svb) =
+    match va sva <> match vb svb
