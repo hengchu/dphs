@@ -18,8 +18,10 @@ import Control.Monad
 import Data.Semigroup
 
 import Data.Comp.Multi
-import qualified Streamly.Prelude as S
 import qualified Streamly as S
+import qualified Streamly.Data.Fold as S
+import qualified Streamly.Internal.Data.Fold.Types as S
+import qualified Streamly.Prelude as S
 
 -- | Each key in a 'Bucket' is a group of traces that share a coupling, under
 -- the pointwise equality proof technique.
@@ -140,7 +142,6 @@ couple ctrace cresult pcs strace sresult =
     (False, Symbolic equality) -> do
       costBounds <- V.zipWithM makeCostBound ctrace strace
       return (conjunct costBounds .&& conjunct pcs .&& equality)
-
   where makeCostBound :: Call -> SymInstr -> Maybe SBool
         makeCostBound call sinstr =
           let (_, center, width) = unpackSymSample (sinstr ^. #sample)
@@ -149,6 +150,27 @@ couple ctrace cresult pcs strace sresult =
           in if width == call ^. #width
              then Just (sinstr ^. #cost .>= lowerbound)
              else Nothing
+
+coupleAllPathsFold ::
+  Match a b
+  => V.Vector Call
+  -> a
+  -> S.Fold (LoggingT IO) (Result b) SBool
+coupleAllPathsFold ctrace cresult = S.Fold step (return sfalse) return
+  where step acc (Result sresult pcs strace) =
+          case couple ctrace cresult pcs strace sresult of
+            Nothing -> return acc
+            Just cond -> return (acc .|| cond)
+
+-- |Couple a concrete trace with all possibly matching paths.
+coupleAllPaths ::
+  Match a b
+  => V.Vector Call
+  -> a
+  -> SerialLogging (Result b)
+  -> LoggingT IO SBool
+coupleAllPaths ctrace cresult =
+  S.fold (coupleAllPathsFold ctrace cresult)
 
 -- |Find the index of a matching group of trace, using binary search.
 binSearch :: MatchOrd k b => V.Vector (k, v) -> b -> Maybe Int
