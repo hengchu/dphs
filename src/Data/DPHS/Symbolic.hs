@@ -9,8 +9,8 @@ import Data.DPHS.Precedence
 import Text.PrettyPrint.ANSI.Leijen
 
 data SExp :: * where
-  SI      :: Integer  -> SExp
-  SR      :: Rational -> SExp
+  SI      :: !Integer  -> SExp
+  SR      :: !Rational -> SExp
   -- |A placeholder for the ith laplace sample from concrete execution.
   SLap    :: Int -> SExp -> Double -> SExp
   SVar    :: Name -> SExp
@@ -55,7 +55,14 @@ instance Show SExp where
   showsPrec _ t = showSExp t
 
 instance Num SExp where
-  (+) = SAdd
+  (SI 0) + other  = other
+  other  + (SI 0) = other
+
+  (SR 0) + other  = other
+  other  + (SR 0) = other
+
+  a + b           = SAdd a b
+
   (-) = SSub
   (*) = SMult
   abs = SAbs
@@ -67,9 +74,17 @@ instance Fractional SExp where
   fromRational = SR
 
 instance SynBool SExp where
-  neg = SNeg
-  (.&&) = SAnd
-  (.||) = SOr
+  neg STrue  = SFalse
+  neg SFalse = STrue
+  neg other  = SNeg other
+
+  STrue .&& other = other
+  other .&& STrue = other
+  a     .&& b     = SAnd a b
+
+  SFalse .|| other  = other
+  other  .|| SFalse = other
+  a      .|| b      = SOr a b
 
 instance SynOrd SExp where
   type Cmp SExp = SBool
@@ -93,14 +108,14 @@ class Match a b where
 class MatchOrd a b where
   matchOrd :: a -> b -> Ordering
 
-instance {-# OVERLAPPING #-}
+instance {-# OVERLAPPABLE #-}
   MatchOrd a b => Match a b where
   match a b =
     case matchOrd a b of
       EQ -> Static True
       _  -> Static False
 
-instance {-# OVERLAPPING #-}
+instance {-# OVERLAPPABLE #-}
   Ord a => MatchOrd a a where
   matchOrd = compare
 

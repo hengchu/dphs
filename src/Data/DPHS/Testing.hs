@@ -9,6 +9,7 @@ import Data.DPHS.TEval
 import Data.DPHS.Symbolic
 import Data.DPHS.Syntax
 import Data.DPHS.Logging
+import Data.DPHS.HXFunctor
 
 import Optics
 import qualified Data.Map.Strict as M
@@ -44,8 +45,8 @@ class Ord (Key a) => GroupBy a where
   val :: a -> Val a
 
 profile :: ( Show a
-          , GroupBy a
-          )
+           , GroupBy a
+           )
        => Int -- ^number of trials to run
        -> Term (WithPos DPCheckF) (InstrDist a) -- ^the program to run
        -> IO (Bucket a) -- ^the gathered bucket
@@ -129,8 +130,9 @@ couple ::
   -> PathConditions
   -> V.Vector SymInstr
   -> b
+  -> Double
   -> Maybe SBool
-couple ctrace cresult pcs strace sresult =
+couple ctrace cresult pcs strace sresult eps =
   case ( length strace > length ctrace
        , match cresult sresult
        ) of
@@ -138,10 +140,12 @@ couple ctrace cresult pcs strace sresult =
     (_, Static False) -> Nothing
     (False, Static True) -> do
       costBounds <- V.zipWithM makeCostBound ctrace strace
-      return (conjunct costBounds .&& conjunct pcs)
+      let totalCost = sum (fmap (view #cost) strace)
+      return (conjunct costBounds .&& conjunct pcs .&& totalCost .<= realToFrac eps)
     (False, Symbolic equality) -> do
+      let totalCost = sum (fmap (view #cost) strace)
       costBounds <- V.zipWithM makeCostBound ctrace strace
-      return (conjunct costBounds .&& conjunct pcs .&& equality)
+      return (conjunct costBounds .&& conjunct pcs .&& equality .&& totalCost .<= realToFrac eps)
   where makeCostBound :: Call -> SymInstr -> Maybe SBool
         makeCostBound call sinstr =
           let (_, center, width) = unpackSymSample (sinstr ^. #sample)
@@ -155,22 +159,73 @@ coupleAllPathsFold ::
   Match a b
   => V.Vector Call
   -> a
+  -> Double
   -> S.Fold (LoggingT IO) (Result b) SBool
-coupleAllPathsFold ctrace cresult = S.Fold step (return sfalse) return
+coupleAllPathsFold ctrace cresult eps =
+  -- Note that using the default value of false implies that each concrete trace
+  -- must have at least 1 matching path.
+  S.Fold step (return sfalse) return
   where step acc (Result sresult pcs strace) =
-          case couple ctrace cresult pcs strace sresult of
+          case couple ctrace cresult pcs strace sresult eps of
             Nothing -> return acc
             Just cond -> return (acc .|| cond)
+
+-- To work with infinite symbolic result streams, we can design an interface
+-- that gives a programmer the choice to decide how much of the infinite stream
+-- should be consumed.
+
+-- In practice, we are only interested in exhausting the paths that match things
+-- that we observe from concrete executions. For some programs, like PrivTree,
+-- the infinite stream is actually producing monotonically larger outputs, so we
+-- can use a O(1) space cutoff strategy, which fits the idea of "streaming".
+
+-- In general, maybe we could allow up to O(n) space for intermediate
+-- aggregation to decide how much is consumed?
 
 -- |Couple a concrete trace with all possibly matching paths.
 coupleAllPaths ::
   Match a b
   => V.Vector Call
   -> a
+  -> Double
   -> SerialLogging (Result b)
   -> LoggingT IO SBool
-coupleAllPaths ctrace cresult =
-  S.fold (coupleAllPathsFold ctrace cresult)
+coupleAllPaths ctrace cresult eps =
+  S.fold (coupleAllPathsFold ctrace cresult eps)
+
+conjunctAllTraces ::
+  Match a b
+  => V.Vector (V.Vector Call, a)
+  -> SerialLogging (Result b)
+  -> Double
+  -> LoggingT IO SBool
+conjunctAllTraces traces stream eps = do
+  traceModels <- mapM (\(ctrace, cresult) -> coupleAllPaths ctrace cresult eps stream) traces
+  return (conjunct traceModels)
+
+-- |Top-level API for building an SMT model that is the approximate pointwise
+-- equality proof, using the concrete and symbolic version of the same program.
+-- TODO: need a few more tunable knobs.
+-- 1. pre-optimization
+-- 2. logging level
+-- 3. number of traces
+approxProof ::
+  forall a b.
+  ( Show a
+  , GroupBy a
+  , Match (Val a) b
+  )
+  => Term (WithPos DPCheckF) (InstrDist a)
+  -> Term (WithPos DPCheckF) (SymM      b)
+  -> Double
+  -> IO (V.Vector SBool)
+approxProof concrete symbolic eps = do
+  bucket <- profile 10 concrete
+  let stream = seval (xtoCxt symbolic)
+  models <- runStderrColoredLoggingWarnT $
+            (fmap snd . M.toList)   <$>
+            mapM (\concrete -> conjunctAllTraces concrete stream eps) bucket
+  return (V.fromList models)
 
 -- |Find the index of a matching group of trace, using binary search.
 binSearch :: MatchOrd k b => V.Vector (k, v) -> b -> Maybe Int
