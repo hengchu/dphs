@@ -16,10 +16,8 @@ import qualified Data.Map.Strict as M
 import qualified Data.Vector as V
 import Control.Monad.Catch
 import Control.Monad
-import Data.Semigroup
 
 import Data.Comp.Multi
-import qualified Streamly as S
 import qualified Streamly.Data.Fold as S
 import qualified Streamly.Internal.Data.Fold.Types as S
 import qualified Streamly.Prelude as S
@@ -121,6 +119,37 @@ unpackSymSample :: SReal -> (Int, SReal, Double)
 unpackSymSample (SReal (SLap idx center width)) = (idx, SReal center, width)
 unpackSymSample other = error $ "unpackSymSample: expecting SLap constructor, got " ++ show other
 
+unpackSReal :: SReal -> SExp
+unpackSReal (SReal e) = e
+
+substituteSymbolicSamples
+  :: V.Vector Call -> V.Vector SymInstr -> SExp -> SExp
+substituteSymbolicSamples ctrace strace (SLap i _ _) =
+  unpackSReal $ (realToFrac $ ctrace V.! i ^. #sample) + (strace V.! i) ^. #shift
+substituteSymbolicSamples ctrace strace term =
+  let recur = substituteSymbolicSamples ctrace strace
+  in case term of
+       SAdd a b -> SAdd (recur a) (recur b)
+       SSub a b -> SSub (recur a) (recur b)
+       SDiv a b -> SDiv (recur a) (recur b)
+       SMult a b -> SMult (recur a) (recur b)
+       SAbs a -> SAbs (recur a)
+       SSignum a -> SSignum (recur a)
+       SEq a b -> SEq (recur a) (recur b)
+       SNeq a b -> SNeq (recur a) (recur b)
+       SLt a b -> SLt (recur a) (recur b)
+       SLe a b -> SLe (recur a) (recur b)
+       SGt a b -> SGt (recur a) (recur b)
+       SGe a b -> SGe (recur a) (recur b)
+       SNeg a -> SNeg (recur a)
+       SAnd a b -> SAnd (recur a) (recur b)
+       SOr a b -> SOr (recur a) (recur b)
+       _ -> term
+
+substituteSBool :: V.Vector Call -> V.Vector SymInstr -> SBool -> SBool
+substituteSBool ctrace strace (SBool term) =
+  SBool $ substituteSymbolicSamples ctrace strace term
+
 -- |Couple a concrete trace with a symbolic trace. If we can statically
 -- determinine that these two traces cannot be coupled, then produce 'Nothing'.
 couple ::
@@ -141,11 +170,13 @@ couple ctrace cresult pcs strace sresult eps =
     (False, Static True) -> do
       costBounds <- V.zipWithM makeCostBound ctrace strace
       let totalCost = sum (fmap (view #cost) strace)
-      return (conjunct costBounds .&& conjunct pcs .&& totalCost .<= realToFrac eps)
+      return . substituteSBool ctrace strace $
+        (conjunct costBounds .&& conjunct pcs .&& totalCost .<= realToFrac eps)
     (False, Symbolic equality) -> do
       let totalCost = sum (fmap (view #cost) strace)
       costBounds <- V.zipWithM makeCostBound ctrace strace
-      return (conjunct costBounds .&& conjunct pcs .&& equality .&& totalCost .<= realToFrac eps)
+      return . substituteSBool ctrace strace $
+        (conjunct costBounds .&& conjunct pcs .&& equality .&& totalCost .<= realToFrac eps)
   where makeCostBound :: Call -> SymInstr -> Maybe SBool
         makeCostBound call sinstr =
           let (_, center, width) = unpackSymSample (sinstr ^. #sample)
@@ -207,8 +238,6 @@ conjunctAllTraces traces stream eps = do
 -- equality proof, using the concrete and symbolic version of the same program.
 -- TODO: need a few more tunable knobs.
 -- 1. pre-optimization
--- 2. logging level
--- 3. number of traces
 approxProof ::
   forall a b.
   ( Show a
@@ -217,15 +246,31 @@ approxProof ::
   )
   => Term (WithPos DPCheckF) (InstrDist a)
   -> Term (WithPos DPCheckF) (SymM      b)
+  -> Int
   -> Double
+  -> (forall a. LoggingT IO a -> IO a)
   -> IO (V.Vector SBool)
-approxProof concrete symbolic eps = do
-  bucket <- profile 10 concrete
+approxProof concrete symbolic ntrials eps runLogger = do
+  bucket <- profile ntrials concrete
   let stream = seval (xtoCxt symbolic)
-  models <- runStderrColoredLoggingWarnT $
-            (fmap snd . M.toList)   <$>
+  models <- runLogger $
+            (fmap snd . M.toList) <$>
             mapM (\concrete -> conjunctAllTraces concrete stream eps) bucket
   return (V.fromList models)
+
+approxProofVerbose ::
+  forall a b.
+  ( Show a
+  , GroupBy a
+  , Match (Val a) b
+  )
+  => Term (WithPos DPCheckF) (InstrDist a)
+  -> Term (WithPos DPCheckF) (SymM      b)
+  -> Int
+  -> Double
+  -> IO (V.Vector SBool)
+approxProofVerbose concrete symbolic ntrials eps =
+  approxProof concrete symbolic ntrials eps runStderrColoredLoggingT
 
 -- |Find the index of a matching group of trace, using binary search.
 binSearch :: MatchOrd k b => V.Vector (k, v) -> b -> Maybe Int

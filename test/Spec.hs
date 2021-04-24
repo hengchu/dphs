@@ -93,3 +93,4 @@ main = hspec $ do
   SEvalTests.sevalTests
   SolverZ3Tests.consistencyTests
   TestingTests.coupleTests
+  TestingTests.approxProofTests
