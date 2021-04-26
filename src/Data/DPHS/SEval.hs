@@ -211,6 +211,8 @@ step (project @(CompareF :&: Pos) -> Just (Or lhs rhs :&: pos)) =
     (lhs2, _) -> mapStep (\lhs -> iAOr pos lhs rhs) lhs2
   where lhs' = step lhs
         rhs' = step rhs
+step (project @(CompareF :&: Pos) -> Just (CTrue :&: _pos)) = Stepped (Hole (I true))
+step (project @(CompareF :&: Pos) -> Just (CFalse :&: _pos)) = Stepped (Hole (I false))
 
 -- All ArithF cases.
 step (project @(ArithF :&: Pos) -> Just (IntLit value :&: _pos)) =
@@ -317,6 +319,29 @@ step (project @(ArithF :&: Pos) -> Just (Sqrt term :&: pos)) =
         DEF_BRANCH
     other -> mapStep (\term -> iASqrt pos term) other
   where term' = step term
+
+-- All ListF cases.
+step (project @(ListF :&: Pos) -> Just (Nil :&: _pos)) = Stepped (Hole (I DL.empty))
+step (project @(ListF :&: Pos) -> Just (Cons hd tl :&: pos)) =
+  case (hd', tl') of
+    (Normal, Normal) ->
+      case (hd, tl) of
+        (Hole (I vhd), Hole (I vtl)) -> Stepped (Hole (I (DL.cons vhd vtl)))
+        DEF_BRANCH
+    (Normal, _) -> mapStep (\tl -> iACons pos hd tl) tl'
+    _ -> mapStep (\hd -> iACons pos hd tl) hd'
+  where hd' = step hd
+        tl' = step tl
+step (project @(ListF :&: Pos) -> Just (Snoc hd tl :&: pos)) =
+  case (hd', tl') of
+    (Normal, Normal) ->
+      case (hd, tl) of
+        (Hole (I vhd), Hole (I vtl)) -> Stepped (Hole (I (DL.snoc vhd vtl)))
+        DEF_BRANCH
+    (Normal, _) -> mapStep (\tl -> iASnoc pos hd tl) tl'
+    _ -> mapStep (\hd -> iASnoc pos hd tl) hd'
+  where hd' = step hd
+        tl' = step tl
 
 step _other = error "step: unhandled syntactic form"
 

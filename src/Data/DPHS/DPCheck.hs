@@ -2,7 +2,7 @@
 
 module Data.DPHS.DPCheck where
 
-import Data.DList
+import Data.DList hiding (Cons, Nil)
 import Data.Comp.Multi
 import Data.Comp.Multi.Derive
 import Optics
@@ -48,11 +48,46 @@ instance ShowHF EffF where
   showHF (Branch cond t1 t2) = K (printf "if %s then %s else %s" (unK cond) (unK t1) (unK t2))
   showHF (Laplace center width) = K (printf "laplace %s %f" (unK center) width)
 
+data ListF :: (* -> *) -> * -> * where
+  Nil  :: ListF r (DList a)
+  Cons :: r a -> r (DList a) -> ListF r (DList a)
+  Snoc :: r (DList a) -> r a -> ListF r (DList a)
+$(derive [makeShowHF, makeEqHF, makeOrdHF,
+          makeHFunctor, makeHFoldable, makeHTraversable]
+         [''ListF])
+
+iNil :: ListF :<: f => Cxt h f x (DList a)
+iNil = inject Nil
+
+iANil ::
+  ( ListF :<: s
+  , DistAnn s p f
+  ) => p -> Cxt h f x (DList a)
+iANil p = Term (injectA p (inj Nil))
+
+iCons :: ListF :<: f => Cxt h f x a -> Cxt h f x (DList a) -> Cxt h f x (DList a)
+iCons hd tl = inject (Cons hd tl)
+
+iACons ::
+  ( ListF :<: s
+  , DistAnn s p f
+  ) => p -> Cxt h f x a -> Cxt h f x (DList a) -> Cxt h f x (DList a)
+iACons p hd tl = Term (injectA p (inj (Cons hd tl)))
+
+iSnoc :: ListF :<: f => Cxt h f x (DList a) -> Cxt h f x a -> Cxt h f x (DList a)
+iSnoc hd tl = inject (Snoc hd tl)
+
+iASnoc ::
+  ( ListF :<: s
+  , DistAnn s p f
+  ) => p -> Cxt h f x (DList a) -> Cxt h f x a -> Cxt h f x (DList a)
+iASnoc p hd tl = Term (injectA p (inj (Snoc hd tl)))
+
 type DPCheckF = ArithF :+: CompareF
-                :+: EffF :+: XLambdaF :+: MonadF -- :+: ContainerF
+                :+: EffF :+: XLambdaF :+: MonadF :+: ListF
 
 type NDPCheckF = ArithF :+: CompareF
-                 :+: EffF :+: LambdaF :+: MonadF -- :+: ContainerF
+                 :+: EffF :+: LambdaF :+: MonadF :+: ListF
 
 instance
   ( EffF :<: tgt
@@ -86,6 +121,21 @@ laplace ::
   -> EmMon (Term (WithPos DPCheckF)) m real
 laplace center width =
   fromDeepRepr' $ iALaplace (fromCallStack callStack) center width
+
+nil :: (HasCallStack, Typeable a) => Term (WithPos DPCheckF) (DList a)
+nil = iANil (fromCallStack callStack)
+
+cons ::
+  ( HasCallStack
+  , Typeable a
+  ) => Term (WithPos DPCheckF) a -> Term (WithPos DPCheckF) (DList a) -> Term (WithPos DPCheckF) (DList a)
+cons = iACons (fromCallStack callStack)
+
+snoc ::
+  ( HasCallStack
+  , Typeable a
+  ) => Term (WithPos DPCheckF) (DList a) -> Term (WithPos DPCheckF) a -> Term (WithPos DPCheckF) (DList a)
+snoc = iASnoc (fromCallStack callStack)
 
 data SymInstr = SymInstr {
   siSample :: SReal

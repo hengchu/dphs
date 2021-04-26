@@ -57,7 +57,7 @@ approxProofTests = describe "Data.DPHS.Testing.approxProof" $ do
           (toDeepRepr' $ rnm xs2)
           Group
           100 2.0
-          runStderrColoredLoggingT
+          runStderrColoredLoggingWarnT
       mapM (\mdl -> checkConsistency [mdl] 0) models
     solverResults `shouldSatisfy` (all (\r -> r == Ok))
 
@@ -71,6 +71,36 @@ approxProofTests = describe "Data.DPHS.Testing.approxProof" $ do
           (toDeepRepr' $ rnm xs2)
           Group
           100 0.5
-          runStderrColoredLoggingT
+          runStderrColoredLoggingWarnT
       mapM (\mdl -> checkConsistency [mdl] 0) models
     solverResults `shouldSatisfy` (any (\r -> r == Inconsistent))
+
+  it "successfully constructs a valid proof for svBoolean on small inputs" $ do
+    let xs1 = [1,2,3,4,5,6,7,10]
+        xs2 = [2,1,2,5,4,5,8,11]
+    solverResults <- liftIO $ do
+      models <-
+        approxProof
+          (toDeepRepr' $ svBoolean xs1 7 2)
+          (toDeepRepr' $ svBoolean xs2 7 2)
+          Group
+          500
+          1.0
+          runStderrColoredLoggingWarnT
+      mapM (\mdl -> checkConsistency [mdl] 0) models
+    solverResults `shouldSatisfy` (all (== Ok))
+
+  it "successfully detects error for svBoolean on small inputs when budget is too small" $ do
+    let xs1 = [1,2,3,4,5,6,7,10]
+        xs2 = [2,1,2,5,4,5,8,11]
+    solverResults <- liftIO $ do
+      models <-
+        approxProof
+          (toDeepRepr' $ svBoolean xs1 7 2)
+          (toDeepRepr' $ svBoolean xs2 7 2)
+          Group
+          500
+          0.1
+          runStderrColoredLoggingWarnT
+      mapM (\mdl -> checkConsistency [mdl] 0) models
+    solverResults `shouldSatisfy` (any (== Inconsistent))

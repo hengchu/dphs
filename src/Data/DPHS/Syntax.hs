@@ -49,6 +49,9 @@ class SynBool a where
   (.&&) :: HasCallStack => a -> a -> a
   (.||) :: HasCallStack => a -> a -> a
 
+  true  :: a
+  false :: a
+
 class SynBool (Cmp a) => SynOrd a where
   type Cmp a :: *
 
@@ -260,24 +263,61 @@ data CompareF :: (* -> *) -> * -> * where
   And   :: SynBool bool => r bool -> r bool -> CompareF r bool
   Or    :: SynBool bool => r bool -> r bool -> CompareF r bool
 
-$(derive [makeHFunctor, makeHFoldable, makeHTraversable,
-          makeShowHF, makeEqHF, makeOrdHF,
-          smartConstructors, smartAConstructors]
-         [''CompareF])
+  CTrue  :: SynBool bool => CompareF r bool
+  CFalse :: SynBool bool => CompareF r bool
 
-{-
-instance {-# OVERLAPPABLE #-}
-  CompareF :<: tgt => HOASToNamed CompareF tgt where
-  hoasToNamedAlg (IsEq v1 v2) = Compose $ iIsEq <$> getCompose v1 <*> getCompose v2
-  hoasToNamedAlg (IsNeq v1 v2) = Compose $ iIsNeq <$> getCompose v1 <*> getCompose v2
-  hoasToNamedAlg (IsLt v1 v2) = Compose $ iIsLt <$> getCompose v1 <*> getCompose v2
-  hoasToNamedAlg (IsLe v1 v2) = Compose $ iIsLe <$> getCompose v1 <*> getCompose v2
-  hoasToNamedAlg (IsGt v1 v2) = Compose $ iIsGt <$> getCompose v1 <*> getCompose v2
-  hoasToNamedAlg (IsGe v1 v2) = Compose $ iIsGe <$> getCompose v1 <*> getCompose v2
-  hoasToNamedAlg (Neg v) = Compose $ iNeg <$> getCompose v
-  hoasToNamedAlg (And v1 v2) = Compose $ iAnd <$> getCompose v1 <*> getCompose v2
-  hoasToNamedAlg (Or v1 v2) = Compose $ iOr <$> getCompose v1 <*> getCompose v2
--}
+iAIsEq :: (SynOrd a, CompareF :<: s, DistAnn s p f) => p -> Cxt h f x a -> Cxt h f x a -> Cxt h f x (Cmp a)
+iAIsEq p a b = Term (injectA p (inj (IsEq a b)))
+
+iAIsNeq :: (SynOrd a, CompareF :<: s, DistAnn s p f) => p -> Cxt h f x a -> Cxt h f x a -> Cxt h f x (Cmp a)
+iAIsNeq p a b = Term (injectA p (inj (IsNeq a b)))
+
+iAIsLt :: (SynOrd a, CompareF :<: s, DistAnn s p f) => p -> Cxt h f x a -> Cxt h f x a -> Cxt h f x (Cmp a)
+iAIsLt p a b = Term (injectA p (inj (IsLt a b)))
+
+iAIsLe :: (SynOrd a, CompareF :<: s, DistAnn s p f) => p -> Cxt h f x a -> Cxt h f x a -> Cxt h f x (Cmp a)
+iAIsLe p a b = Term (injectA p (inj (IsLe a b)))
+
+iAIsGt :: (SynOrd a, CompareF :<: s, DistAnn s p f) => p -> Cxt h f x a -> Cxt h f x a -> Cxt h f x (Cmp a)
+iAIsGt p a b = Term (injectA p (inj (IsGt a b)))
+
+iAIsGe :: (SynOrd a, CompareF :<: s, DistAnn s p f) => p -> Cxt h f x a -> Cxt h f x a -> Cxt h f x (Cmp a)
+iAIsGe p a b = Term (injectA p (inj (IsGe a b)))
+
+iANeg :: (SynBool a, CompareF :<: s, DistAnn s p f) => p -> Cxt h f x a -> Cxt h f x a
+iANeg p a = Term (injectA p (inj (Neg a)))
+
+iAAnd :: (SynBool a, CompareF :<: s, DistAnn s p f) => p -> Cxt h f x a -> Cxt h f x a -> Cxt h f x a
+iAAnd p a b = Term (injectA p (inj (And a b)))
+
+iAOr :: (SynBool a, CompareF :<: s, DistAnn s p f) => p -> Cxt h f x a -> Cxt h f x a -> Cxt h f x a
+iAOr p a b = Term (injectA p (inj (Or a b)))
+
+iACTrue :: (SynBool a, CompareF :<: s, DistAnn s p f) => p -> Cxt h f x a
+iACTrue p = Term (injectA p (inj CTrue))
+
+iACFalse :: (SynBool a, CompareF :<: s, DistAnn s p f) => p -> Cxt h f x a
+iACFalse p = Term (injectA p (inj CFalse))
+
+ctrue :: ( CompareF :<: h
+         , CompareF :&: Pos :<: (WithPos h)
+         , DistAnn h Pos (WithPos h)
+         , SynBool a
+         , HasCallStack
+         ) => Cxt hole (WithPos h) x a
+ctrue = iACTrue (fromCallStack callStack)
+
+cfalse :: ( CompareF :<: h
+         , CompareF :&: Pos :<: (WithPos h)
+         , DistAnn h Pos (WithPos h)
+         , SynBool a
+         , HasCallStack
+         ) => Cxt hole (WithPos h) x a
+cfalse = iACFalse (fromCallStack callStack)
+
+$(derive [makeHFunctor, makeHFoldable, makeHTraversable,
+          makeShowHF, makeEqHF, makeOrdHF]
+         [''CompareF])
 
 instance {-# OVERLAPPING #-}
   ( CompareF :<: tgt
@@ -303,6 +343,10 @@ instance {-# OVERLAPPING #-}
     Compose $ iAAnd pos <$> getCompose v1 <*> getCompose v2
   hoasToNamedAlg (Or v1 v2 :&: pos) =
     Compose $ iAOr pos <$> getCompose v1 <*> getCompose v2
+  hoasToNamedAlg (CTrue :&: pos) =
+    Compose $ return $ iACTrue pos
+  hoasToNamedAlg (CFalse :&: pos) =
+    Compose $ return $ iACFalse pos
 
 -- |Embedded monadic syntax.
 data MonadF :: (* -> *) -> * -> * where
@@ -541,6 +585,9 @@ instance {-# OVERLAPPING #-}
   (.&&) = iAAnd (fromCallStack callStack)
   (.||) = iAOr (fromCallStack callStack)
 
+  true = ctrue
+  false = cfalse
+
 {-
 instance {-# OVERLAPPABLE #-}
   (SynOrd a, CompareF :<: lang) => SynOrd (Cxt hole lang f a) where
@@ -572,6 +619,8 @@ instance SynBool Bool where
   neg = not
   (.&&) = (&&)
   (.||) = (||)
+  true = True
+  false = False
 
 instance SynOrd Double where
   type Cmp Double = Bool

@@ -1,5 +1,6 @@
 module Data.DPHS.Examples.DPCheck where
 
+import Data.DList (DList)
 import Type.Reflection
 
 import Data.Comp.Multi
@@ -46,3 +47,29 @@ rnmAux (x:xs) currMax maxIdx thisIdx = do
   if_ (noised .> currMax)
       (rnmAux xs noised  thisIdx (thisIdx+1))
       (rnmAux xs currMax maxIdx  (thisIdx+1))
+
+svBoolean :: forall m num.
+  DPCheck m num
+  => [Term (WithPos DPCheckF) num]
+  -> Term (WithPos DPCheckF) num
+  -> Int
+  -> EmMon (Term (WithPos DPCheckF)) m (DList Bool)
+svBoolean xs thresh count = do
+  thresh' <- laplace thresh 2.0
+  svBooleanAux xs (4.0 * realToFrac count) thresh' count nil
+
+svBooleanAux :: forall m num.
+  DPCheck m num
+  => [Term (WithPos DPCheckF) num]
+  -> Double
+  -> Term (WithPos DPCheckF) num
+  -> Int
+  -> Term (WithPos DPCheckF) (DList Bool)
+  -> EmMon (Term (WithPos DPCheckF)) m (DList Bool)
+svBooleanAux []     _width _ _ acc = return acc
+svBooleanAux _      _width _ 0 acc = return acc
+svBooleanAux (x:xs) width  t c acc = do
+  xNoised <- laplace x width
+  if_ (xNoised .> t)
+      (svBooleanAux xs width t (c-1) (acc `snoc` ctrue))
+      (svBooleanAux xs width t c     (acc `snoc` cfalse))

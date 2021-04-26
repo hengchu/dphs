@@ -12,11 +12,12 @@ import Data.DPHS.Logging
 import Data.DPHS.HXFunctor
 import qualified Data.DPHS.StreamUtil as SU
 
+import Control.Monad
+import Control.Monad.Catch
 import Optics
+import qualified Data.DList as DL
 import qualified Data.Map.Strict as M
 import qualified Data.Vector as V
-import Control.Monad.Catch
-import Control.Monad
 
 import Data.Comp.Multi
 import qualified Streamly.Data.Fold as S
@@ -321,6 +322,13 @@ instance GroupBy Double where
   key = id
   val = id
 
+instance GroupBy Bool where
+  type Key Bool = Bool
+  type Val Bool = Bool
+
+  key = id
+  val = id
+
 instance Ord a => GroupBy (InstrValue a) where
   type Key (InstrValue a) = DistShape a
   type Val (InstrValue a) = a
@@ -331,6 +339,13 @@ instance Ord a => GroupBy (InstrValue a) where
 instance GroupBy a => GroupBy [a] where
   type Key [a] = [Key a]
   type Val [a] = [Val a]
+
+  key = fmap key
+  val = fmap val
+
+instance GroupBy a => GroupBy (DL.DList a) where
+  type Key (DL.DList a) = DL.DList (Key a)
+  type Val (DL.DList a) = DL.DList (Val a)
 
   key = fmap key
   val = fmap val

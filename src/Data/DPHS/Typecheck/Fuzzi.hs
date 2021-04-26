@@ -603,6 +603,10 @@ tyCompareF (Or e1 e2 :&: pos)  = TypeChecker $ \ek cxt -> do
   sensCmpM pos e1Ti e2Ti
 tyCompareF (Neg e :&: pos) = TypeChecker $ \ek cxt -> do
   runTypeChecker e ek cxt >>= expectAtomic pos >>= return . Atomic
+tyCompareF (CTrue :&: _pos) = TypeChecker $ \_ek _cxt -> do
+  (return . Atomic) $ ExprInfo (Sens 0) D T 0
+tyCompareF (CFalse :&: _pos) = TypeChecker $ \_ek _cxt -> do
+  (return . Atomic) $ ExprInfo (Sens 0) D T 0
 
 tyContainerF :: MonadThrow m => Alg (ContainerF :&: Pos) (TypeChecker m)
 tyContainerF (VNil :&: _p) = TypeChecker $ \_ek _cxt ->

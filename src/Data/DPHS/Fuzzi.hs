@@ -381,21 +381,6 @@ instance Num a => Num (FuzziM a) where
   fromInteger = return . fromInteger
   negate = fmap negate
 
-instance SynBool a => SynBool (FuzziM a) where
-  neg = fmap neg
-  (.&&) = liftM2 (.&&)
-  (.||) = liftM2 (.||)
-
-instance SynOrd a => SynOrd (FuzziM a) where
-  type Cmp (FuzziM a) = FuzziM (Cmp a)
-
-  (.==) = liftM2 (.==)
-  (./=) = liftM2 (./=)
-  (.<)  = liftM2 (.<)
-  (.<=) = liftM2 (.<=)
-  (.>)  = liftM2 (.>)
-  (.>=) = liftM2 (.>=)
-
 instance Integralite a => Integralite (FuzziM a) where
   idiv = liftM2 idiv
   imod = liftM2 imod

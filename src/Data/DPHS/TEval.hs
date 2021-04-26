@@ -10,6 +10,7 @@ import Data.IORef
 import System.Random.MWC
 import System.Random.MWC.Distributions
 import Type.Reflection
+import qualified Data.DList as DL
 import qualified Data.Vector as V
 
 import Data.DPHS.Syntax
@@ -188,6 +189,8 @@ eval (project @(CompareF :&: Pos) -> Just (Neg a :&: _pos)) =
   neg (eval a)
 eval (project @(CompareF :&: Pos) -> Just (Or a b :&: _pos)) =
   eval a .|| eval b
+eval (project @(CompareF :&: Pos) -> Just (CTrue :&: _pos)) = true
+eval (project @(CompareF :&: Pos) -> Just (CFalse :&: _pos)) = false
 
 -- All ArithF cases
 eval (project @(ArithF :&: Pos) -> Just (IntLit v :&: _pos)) = fromIntegral v
@@ -198,6 +201,11 @@ eval (project @(ArithF :&: Pos) -> Just (Data.DPHS.Syntax.Abs a :&: _pos)) = abs
 eval (project @(ArithF :&: Pos) -> Just (Signum a :&: _pos)) = signum (eval a)
 eval (project @(ArithF :&: Pos) -> Just (Data.DPHS.Syntax.Mult a b :&: _pos)) = eval a * eval b
 eval (project @(ArithF :&: Pos) -> Just (Data.DPHS.Syntax.Div a b :&: _pos)) = eval a / eval b
+
+-- All ListF cases.
+eval (project @(ListF :&: Pos) -> Just (Nil :&: _pos)) = DL.empty
+eval (project @(ListF :&: Pos) -> Just (Cons hd tl :&: _pos)) = DL.cons (eval hd) (eval tl)
+eval (project @(ListF :&: Pos) -> Just (Snoc hd tl :&: _pos)) = DL.snoc (eval hd) (eval tl)
 
 eval (Term (projectA -> _other DCO.:&: pos)) =
   error $ "eval: unhandled syntactic form at position " ++ show pos
