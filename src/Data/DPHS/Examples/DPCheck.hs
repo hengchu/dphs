@@ -7,8 +7,10 @@ import Data.Comp.Multi
 
 import Data.DPHS.SrcLoc
 import Data.DPHS.DPCheck
+import Data.DPHS.TEval
 import Data.DPHS.Syntax
 import Data.DPHS.Syntactic
+import Data.DPHS.Generator
 
 type DPCheck m num = ( num ~ Noise m
                      , CheckBool (Cmp num)
@@ -26,6 +28,15 @@ trivial = do
   if_ (x .>= 0)
       (laplace 0 1.0)
       (laplace 1 1.0)
+
+rnmTester :: Similar [Double]
+          -> ( Term (WithPos DPCheckF) (InstrDist Int)
+             , Term (WithPos DPCheckF) (SymM      Int)
+             )
+rnmTester similar =
+  ( toDeepRepr' $ rnm (map realToFrac $ left similar)
+  , toDeepRepr' $ rnm (map realToFrac $ right similar)
+  )
 
 rnm :: forall m num. DPCheck m num =>
   [Term (WithPos DPCheckF) num] -> EmMon (Term (WithPos DPCheckF)) m Int
@@ -47,6 +58,18 @@ rnmAux (x:xs) currMax maxIdx thisIdx = do
   if_ (noised .> currMax)
       (rnmAux xs noised  thisIdx (thisIdx+1))
       (rnmAux xs currMax maxIdx  (thisIdx+1))
+
+svBooleanTester ::
+  Double
+  -> Int
+  -> Similar [Double]
+  -> ( Term (WithPos DPCheckF) (InstrDist (DList Bool))
+     , Term (WithPos DPCheckF) (SymM      (DList Bool))
+     )
+svBooleanTester threshold count similar =
+  ( toDeepRepr' $ svBoolean (fmap realToFrac $ left similar)  (realToFrac threshold) count
+  , toDeepRepr' $ svBoolean (fmap realToFrac $ right similar) (realToFrac threshold) count
+  )
 
 svBoolean :: forall m num.
   DPCheck m num

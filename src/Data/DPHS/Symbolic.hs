@@ -92,6 +92,9 @@ instance SynBool SExp where
   other  .|| SFalse = other
   a      .|| b      = SOr a b
 
+  true  = STrue
+  false = SFalse
+
 instance SynOrd SExp where
   type Cmp SExp = SBool
 

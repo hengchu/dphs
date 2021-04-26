@@ -10,11 +10,15 @@ import Data.DPHS.Symbolic
 import Data.DPHS.Syntax
 import Data.DPHS.Logging
 import Data.DPHS.HXFunctor
+import Data.DPHS.SolverZ3
+import Data.DPHS.Generator
 import qualified Data.DPHS.StreamUtil as SU
 
 import Control.Monad
 import Control.Monad.Catch
 import Optics
+import Data.Text (pack)
+import Text.Printf
 import qualified Data.DList as DL
 import qualified Data.Map.Strict as M
 import qualified Data.Vector as V
@@ -246,6 +250,30 @@ optimizeSymbolicStream ::
   -> LoggingT IO (SerialLogging (Result a))
 optimizeSymbolicStream None  s = return s
 optimizeSymbolicStream Group s = SU.take groupOptimization s
+
+expectDP ::
+  ( Show a
+  , GroupBy a
+  , Match (Val a) b
+  , Show input
+  )
+  => IO (Similar input) -- ^The input generator
+  -> (Similar input -> ( Term (WithPos DPCheckF) (InstrDist a)
+                       , Term (WithPos DPCheckF) (SymM b))
+     ) -- ^The function that applies the program under test to two similar inputs.
+  -> SEvalOptimizationStrategy b -- ^Optimization strategy for stream of symbolic results.
+  -> Int -- ^Number of sampled traces.
+  -> Double -- ^Expected privacy cost.
+  -> IO Bool
+expectDP gen prog symOptStrat ntrials eps = do
+  inputs <- gen
+  runStderrColoredLoggingWarnT $ $(logInfo) (pack $ printf "testing with inputs %s" (show inputs))
+  let (concrete, symbolic) = prog inputs
+  models <- approxProof concrete symbolic symOptStrat ntrials eps runStderrColoredLoggingWarnT
+  results <- mapM (\mdl -> checkConsistency [mdl] 0) models
+  -- TODO: use parallelization here to speed up, the current version of Z3 no
+  -- longer crashes when we use multiple threads...
+  return $ all (== Ok) results
 
 -- |Top-level API for building an SMT model that is the approximate pointwise
 -- equality proof, using the concrete and symbolic version of the same program.
