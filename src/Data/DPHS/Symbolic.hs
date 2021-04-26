@@ -31,7 +31,7 @@ data SExp :: * where
   SOr     :: SExp -> SExp -> SExp
   STrue   :: SExp
   SFalse  :: SExp
-  deriving (Eq)
+  deriving (Eq, Ord)
 
 strue :: SBool
 strue = SBool STrue
@@ -39,17 +39,23 @@ strue = SBool STrue
 sfalse :: SBool
 sfalse = SBool SFalse
 
+conjunct :: Foldable t => t SBool -> SBool
+conjunct = foldr (.&&) strue
+
+disjunct :: Foldable t => t SBool -> SBool
+disjunct = foldr (.||) sfalse
+
 newtype SInt = SInt SExp
   deriving (Show, SynOrd, Num) via SExp
-  deriving (Eq)
+  deriving (Eq, Ord)
 
 newtype SReal = SReal SExp
   deriving (Show, SynOrd, Num, Fractional) via SExp
-  deriving (Eq)
+  deriving (Eq, Ord)
 
 newtype SBool = SBool SExp
   deriving (Show, SynBool) via SExp
-  deriving (Eq)
+  deriving (Eq, Ord)
 
 instance Show SExp where
   showsPrec _ t = showSExp t

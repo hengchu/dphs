@@ -7,14 +7,14 @@ import qualified Data.Vector as V
 
 import Control.Monad.IO.Class
 
-import Data.DPHS.TEval
 import Data.DPHS.DPCheck
-import Data.DPHS.Symbolic
-import Data.DPHS.Testing
-import Data.DPHS.SolverZ3
-import Data.DPHS.Logging
-import Data.DPHS.Syntactic
 import Data.DPHS.Examples.DPCheck
+import Data.DPHS.Logging
+import Data.DPHS.SolverZ3
+import Data.DPHS.Symbolic
+import Data.DPHS.Syntactic
+import Data.DPHS.TEval
+import Data.DPHS.Testing
 
 coupleTests :: SpecWith (Arg Expectation)
 coupleTests = describe "Data.DPHS.Testing.couple" $ do
@@ -48,26 +48,28 @@ coupleTests = describe "Data.DPHS.Testing.couple" $ do
 approxProofTests :: SpecWith (Arg Expectation)
 approxProofTests = describe "Data.DPHS.Testing.approxProof" $ do
   it "successfully constructs a valid proof for rnm on small inputs" $ do
-    let xs1 = [1,2,3]
-        xs2 = [2,1,3]
+    let xs1 = [1,2,3,4,5]
+        xs2 = [2,1,3,5,4]
     solverResults <- liftIO $ do
       models <-
         approxProof
           (toDeepRepr' $ rnm xs1)
           (toDeepRepr' $ rnm xs2)
+          Group
           100 2.0
           runStderrColoredLoggingT
       mapM (\mdl -> checkConsistency [mdl] 0) models
     solverResults `shouldSatisfy` (all (\r -> r == Ok))
 
   it "successfully detects error for rnm on small inputs when privacy budget is too small" $ do
-    let xs1 = [1,2,3]
-        xs2 = [2,1,3]
+    let xs1 = [1,2,3,5,4]
+        xs2 = [2,1,3,4,5]
     solverResults <- liftIO $ do
       models <-
         approxProof
           (toDeepRepr' $ rnm xs1)
           (toDeepRepr' $ rnm xs2)
+          Group
           100 0.5
           runStderrColoredLoggingT
       mapM (\mdl -> checkConsistency [mdl] 0) models

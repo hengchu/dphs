@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: c3fcd79be104a7101e4e67d1578fd4d07118fed669e92530fd4037b8134428bb
+-- hash: 7e3785f35e53d25b586997875df29a934692f9cce3dd079c2fa3e4d23320dd1b
 
 name:           dphs
 version:        0.1.0.0
@@ -41,6 +41,7 @@ library
       Data.DPHS.SEval
       Data.DPHS.SolverZ3
       Data.DPHS.SrcLoc
+      Data.DPHS.StreamUtil
       Data.DPHS.Symbolic
       Data.DPHS.Syntactic
       Data.DPHS.Syntax

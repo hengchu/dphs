@@ -10,6 +10,7 @@ import Data.DPHS.Symbolic
 import Data.DPHS.Syntax
 import Data.DPHS.Logging
 import Data.DPHS.HXFunctor
+import qualified Data.DPHS.StreamUtil as SU
 
 import Optics
 import qualified Data.Map.Strict as M
@@ -234,6 +235,17 @@ conjunctAllTraces traces stream eps = do
   traceModels <- mapM (\(ctrace, cresult) -> coupleAllPaths ctrace cresult eps stream) traces
   return (conjunct traceModels)
 
+data SEvalOptimizationStrategy a where
+  None  :: SEvalOptimizationStrategy a
+  Group :: Ord a => SEvalOptimizationStrategy a
+
+optimizeSymbolicStream ::
+  SEvalOptimizationStrategy a
+  -> SerialLogging (Result a)
+  -> LoggingT IO (SerialLogging (Result a))
+optimizeSymbolicStream None  s = return s
+optimizeSymbolicStream Group s = SU.take groupOptimization s
+
 -- |Top-level API for building an SMT model that is the approximate pointwise
 -- equality proof, using the concrete and symbolic version of the same program.
 -- TODO: need a few more tunable knobs.
@@ -246,16 +258,17 @@ approxProof ::
   )
   => Term (WithPos DPCheckF) (InstrDist a)
   -> Term (WithPos DPCheckF) (SymM      b)
+  -> SEvalOptimizationStrategy b
   -> Int
   -> Double
   -> (forall a. LoggingT IO a -> IO a)
   -> IO (V.Vector SBool)
-approxProof concrete symbolic ntrials eps runLogger = do
+approxProof concrete symbolic symOptStrat ntrials eps runLogger = do
   bucket <- profile ntrials concrete
-  let stream = seval (xtoCxt symbolic)
+  optStream <- runLogger $ optimizeSymbolicStream symOptStrat (seval (xtoCxt symbolic))
   models <- runLogger $
             (fmap snd . M.toList) <$>
-            mapM (\concrete -> conjunctAllTraces concrete stream eps) bucket
+            mapM (\concrete -> conjunctAllTraces concrete optStream eps) bucket
   return (V.fromList models)
 
 approxProofVerbose ::
@@ -266,11 +279,12 @@ approxProofVerbose ::
   )
   => Term (WithPos DPCheckF) (InstrDist a)
   -> Term (WithPos DPCheckF) (SymM      b)
+  -> SEvalOptimizationStrategy b
   -> Int
   -> Double
   -> IO (V.Vector SBool)
-approxProofVerbose concrete symbolic ntrials eps =
-  approxProof concrete symbolic ntrials eps runStderrColoredLoggingT
+approxProofVerbose concrete symbolic symOptStrat ntrials eps =
+  approxProof concrete symbolic symOptStrat ntrials eps runStderrColoredLoggingT
 
 -- |Find the index of a matching group of trace, using binary search.
 binSearch :: MatchOrd k b => V.Vector (k, v) -> b -> Maybe Int
@@ -292,12 +306,6 @@ binSearch arr k =
                  LT -> go (mid+1) end
                  EQ -> go start mid
                  GT -> go start mid
-
-conjunct :: Foldable t => t SBool -> SBool
-conjunct = foldr (.&&) strue
-
-disjunct :: Foldable t => t SBool -> SBool
-disjunct = foldr (.||) sfalse
 
 instance GroupBy Int where
   type Key Int = Int

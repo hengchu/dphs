@@ -9,6 +9,7 @@ import Optics
 import Prelude hiding (iterate)
 import Text.Printf
 import qualified Data.DList as DL
+import qualified Data.Map.Strict as M
 import qualified Data.Vector as V
 import qualified Streamly as S
 import qualified Streamly.Prelude as S
@@ -22,6 +23,7 @@ import Data.DPHS.SolverZ3
 import Data.DPHS.SrcLoc
 import Data.DPHS.Symbolic
 import Data.DPHS.Syntax
+import qualified Data.DPHS.StreamUtil as SU
 
 import Data.Comp.Multi
 
@@ -418,3 +420,37 @@ seval term =
   S.map finalizeResult
   $ explore . S.fromList
   $ [Continue (SymState empty DL.empty 0) [] term]
+
+type GroupKey a = (a, V.Vector SymInstr)
+
+groupStep :: ( Ord a
+             , MonadLogger m
+             , MonadIO m
+             )
+          => Result a
+          -> M.Map (GroupKey a) SBool
+          -> m (SU.Need (M.Map (GroupKey a) SBool))
+groupStep (Result output pcs trace) acc =
+  fmap SU.More (M.alterF go (output, trace) acc)
+  where go Nothing     = (return . Just) (conjunct pcs)
+        go (Just cond) = (return . Just) (cond .|| conjunct pcs)
+
+groupExtract :: forall m a.
+                ( MonadLogger m
+                , MonadIO m
+                )
+             => M.Map (GroupKey a) SBool -> m (S.SerialT m (Result a))
+groupExtract = go . M.toList
+  where go :: [(GroupKey a, SBool)] -> m (S.SerialT m (Result a))
+        go []                            = return S.nil
+        go (((output, strace), pc):more) = do
+          tail <- go more
+          return $ (Result output [pc] strace) S..: tail
+
+groupOptimization ::
+  ( Ord a
+  , MonadLogger m
+  , MonadIO m
+  ) => SU.GeneralizedTake m (Result a)
+groupOptimization =
+  SU.GeneralizedTake groupStep (return M.empty) groupExtract

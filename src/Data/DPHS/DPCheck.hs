@@ -91,8 +91,7 @@ data SymInstr = SymInstr {
   siSample :: SReal
   , siShift :: SReal
   , siCost :: SReal
-  } deriving (Show, Eq)
-
+  } deriving (Show, Eq, Ord)
 
 data SymState = SymState {
   -- |The state for generating fresh names.
