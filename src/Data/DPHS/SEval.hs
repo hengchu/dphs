@@ -343,6 +343,17 @@ step (project @(ListF :&: Pos) -> Just (Snoc hd tl :&: pos)) =
   where hd' = step hd
         tl' = step tl
 
+-- All MaybeF cases.
+step (project @(MaybeF :&: Pos) -> Just (Nothing_ :&: _pos)) = Stepped (Hole (I Nothing))
+step (project @(MaybeF :&: Pos) -> Just (Just_ a :&: pos)) =
+  case a' of
+    Normal ->
+      case a of
+        Hole (I va) -> Stepped (Hole (I (Just va)))
+        DEF_BRANCH
+    other -> mapStep (\a -> iAJust_ pos a) other
+  where a' = step a
+
 step _other = error "step: unhandled syntactic form"
 
 #undef DEF_BRANCH
@@ -376,19 +387,21 @@ finalizeResult :: IntermediateResult a -> Result a
 finalizeResult ir =
   Result (ir ^. #value) (ir ^. #pathConditions) (V.fromList . DL.toList $ ir ^. #symbolicState % #symbolicTrace)
 
-type SerialLogging = S.SerialT (LoggingT IO)
-
-iterate :: SerialLogging (Work (SymM a))
-        ->  LoggingT IO ( SerialLogging (IntermediateResult a)
-                        , SerialLogging (Work (SymM a))
-                        )
+iterate :: forall m a.
+           ( MonadIO m
+           , MonadLogger m
+           )
+        => S.SerialT m (Work (SymM a))
+        ->  m ( S.SerialT m (IntermediateResult a)
+              , S.SerialT m (Work (SymM a))
+              )
 iterate = go S.nil S.nil
-  where go :: SerialLogging (IntermediateResult a)
-           -> SerialLogging (Work (SymM a)) -- ^work list of items that has been stepped in this iteration already
-           -> SerialLogging (Work (SymM a)) -- ^work list of items to be stepped in this iteration
-           -> LoggingT IO ( SerialLogging (IntermediateResult a)
-                          , SerialLogging (Work (SymM a))
-                          )
+  where go :: S.SerialT m (IntermediateResult a)
+           -> S.SerialT m (Work (SymM a)) -- ^work list of items that has been stepped in this iteration already
+           -> S.SerialT m (Work (SymM a)) -- ^work list of items to be stepped in this iteration
+           -> m ( S.SerialT m (IntermediateResult a)
+                , S.SerialT m (Work (SymM a))
+                )
         go results konts worklist = do
           hasWork <- S.uncons @S.SerialT worklist
           case hasWork of
@@ -401,13 +414,13 @@ iterate = go S.nil S.nil
                   let falseConds = (neg sbool):pcs
                   let sampleCount = st ^. #sampleCounter
 
-                  $(logInfo) (pack $ printf "checking path consistency for %s" (show trueConds))
+                  $(logDebug) (pack $ printf "checking path consistency for %s" (show trueConds))
                   trueConsistency <- liftIO $ checkConsistency trueConds sampleCount
-                  $(logInfo) (pack $ printf "path is %s" (show trueConsistency))
+                  $(logDebug) (pack $ printf "path is %s" (show trueConsistency))
 
-                  $(logInfo) (pack $ printf "checking path consistency for %s" (show falseConds))
+                  $(logDebug) (pack $ printf "checking path consistency for %s" (show falseConds))
                   falseConsistency <- liftIO $ checkConsistency falseConds sampleCount
-                  $(logInfo) (pack $ printf "path is %s" (show falseConsistency))
+                  $(logDebug) (pack $ printf "path is %s" (show falseConsistency))
 
                   case (trueConsistency, falseConsistency) of
                     (Ok, Ok) -> go results (Continue st trueConds (k True) `S.cons`
@@ -432,7 +445,11 @@ iterate = go S.nil S.nil
                         _other -> error "iterate: expected first-order value on normalized term"
                     _other -> error "iterate: expected (Ret _) on normalized term"
 
-explore :: SerialLogging (Work (SymM a)) -> SerialLogging (IntermediateResult a)
+explore :: ( MonadIO m
+           , MonadLogger m
+           )
+        => S.SerialT m (Work (SymM a))
+        -> S.SerialT m (IntermediateResult a)
 explore work = do
   (results, more) <- lift $ iterate work
   hasMore <- lift $ S.uncons @S.SerialT more
@@ -440,7 +457,7 @@ explore work = do
     Just _ -> S.wSerial results (explore more)
     Nothing -> results
 
-seval :: Cxt Hole Carrier I (SymM a) -> SerialLogging (Result a)
+seval :: (MonadLogger m, MonadIO m) => Cxt Hole Carrier I (SymM a) -> S.SerialT m (Result a)
 seval term =
   S.map finalizeResult
   $ explore . S.fromList

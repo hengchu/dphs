@@ -2,6 +2,8 @@
 
 module Data.DPHS.Symbolic where
 
+import qualified Data.DList as DL
+
 import Data.DPHS.Syntax
 import Data.DPHS.Name
 import Data.DPHS.Precedence
@@ -114,20 +116,6 @@ data MatchResult =
 class Match a b where
   match :: a -> b -> MatchResult
 
-class MatchOrd a b where
-  matchOrd :: a -> b -> Ordering
-
-instance {-# OVERLAPPABLE #-}
-  MatchOrd a b => Match a b where
-  match a b =
-    case matchOrd a b of
-      EQ -> Static True
-      _  -> Static False
-
-instance {-# OVERLAPPABLE #-}
-  Ord a => MatchOrd a a where
-  matchOrd = compare
-
 parensPrec :: Prec -> Prec -> Doc -> Doc
 parensPrec cxt op doc =
   if cxt > op then parens doc else doc
@@ -178,15 +166,37 @@ instance Semigroup MatchResult where
   _ <> Static False = Static False
   Symbolic a <> Symbolic b = Symbolic (a .&& b)
 
-instance {-# OVERLAPPING #-}
-  Match Double SReal where
+instance Match Int Int where
+  match a b = Static (a == b)
+
+instance Match Bool Bool where
+  match a b = Static (a == b)
+
+instance Match Double Double where
+  match a b = Static (a == b)
+
+instance Match Double SReal where
   match v sv = Symbolic (realToFrac v .== sv)
 
-instance {-# OVERLAPPING #-}
-  Match Int SInt where
+instance Match Int SInt where
   match v sv = Symbolic (fromIntegral v .== sv)
 
-instance {-# OVERLAPPING #-}
-  (Match a sa, Match b sb) => Match (a, b) (sa, sb) where
+instance Match a b => Match (Maybe a) (Maybe b) where
+  match (Just a) (Just b) = match a b
+  match Nothing  Nothing  = Static True
+  match _        _        = Static False
+
+instance (Match a sa, Match b sb) => Match (a, b) (sa, sb) where
   match (va, vb) (sva, svb) =
     match va sva <> match vb svb
+
+instance Match a b => Match [a] [b] where
+  match []      []      = Static True
+  match (a1:b1) (a2:b2) = match a1 a2 <> match b1 b2
+  match _       _       = Static False
+
+instance Match a b => Match (DL.DList a) (DL.DList b) where
+  match (DL.Cons a1 b1) (DL.Cons a2 b2) =
+    match a1 a2 <> match b1 b2
+  match DL.Nil DL.Nil = Static True
+  match _      _      = Static False

@@ -2,6 +2,7 @@ module Data.DPHS.Logging (
   runStdoutColoredLoggingAboveLevelT
   , runStdoutColoredLoggingWarnT
   , runStdoutColoredLoggingT
+  , runStderrColoredLoggingInfoT
   , runStderrColoredLoggingWarnT
   , runStderrColoredLoggingT
   , module Control.Monad.Logger
@@ -21,6 +22,9 @@ runStdoutColoredLoggingAboveLevelT lvl m = runStdoutColoredLoggingT $ filterLogg
 
 runStderrColoredLoggingWarnT :: MonadIO m => LoggingT m a -> m a
 runStderrColoredLoggingWarnT m = runStderrColoredLoggingT $ filterLogger (const (>= LevelWarn)) m
+
+runStderrColoredLoggingInfoT :: MonadIO m => LoggingT m a -> m a
+runStderrColoredLoggingInfoT m = runStderrColoredLoggingT $ filterLogger (const (>= LevelInfo)) m
 
 coloredOutput :: Handle
               -> Loc

@@ -14,10 +14,10 @@ import Data.DPHS.SolverZ3
 import Data.DPHS.Generator
 import qualified Data.DPHS.StreamUtil as SU
 
-import Control.Monad
 import Control.Monad.Catch
-import Optics
+import Control.Monad.Cont
 import Data.Text (pack)
+import Optics
 import Text.Printf
 import qualified Data.DList as DL
 import qualified Data.Map.Strict as M
@@ -27,6 +27,7 @@ import Data.Comp.Multi
 import qualified Streamly.Data.Fold as S
 import qualified Streamly.Internal.Data.Fold.Types as S
 import qualified Streamly.Prelude as S
+import qualified Streamly as S
 
 -- | Each key in a 'Bucket' is a group of traces that share a coupling, under
 -- the pointwise equality proof technique.
@@ -193,11 +194,11 @@ couple ctrace cresult pcs strace sresult eps =
              else Nothing
 
 coupleAllPathsFold ::
-  Match a b
+  (Match a b, MonadIO m, MonadLogger m)
   => V.Vector Call
   -> a
   -> Double
-  -> S.Fold (LoggingT IO) (Result b) SBool
+  -> S.Fold m (Result b) SBool
 coupleAllPathsFold ctrace cresult eps =
   -- Note that using the default value of false implies that each concrete trace
   -- must have at least 1 matching path.
@@ -221,21 +222,21 @@ coupleAllPathsFold ctrace cresult eps =
 
 -- |Couple a concrete trace with all possibly matching paths.
 coupleAllPaths ::
-  Match a b
+  (Match a b, MonadIO m, MonadLogger m)
   => V.Vector Call
   -> a
   -> Double
-  -> SerialLogging (Result b)
-  -> LoggingT IO SBool
+  -> S.SerialT m (Result b)
+  -> m SBool
 coupleAllPaths ctrace cresult eps =
   S.fold (coupleAllPathsFold ctrace cresult eps)
 
 conjunctAllTraces ::
-  Match a b
+  (Match a b, MonadIO m, MonadLogger m)
   => V.Vector (V.Vector Call, a)
-  -> SerialLogging (Result b)
+  -> S.SerialT m (Result b)
   -> Double
-  -> LoggingT IO SBool
+  -> m SBool
 conjunctAllTraces traces stream eps = do
   traceModels <- mapM (\(ctrace, cresult) -> coupleAllPaths ctrace cresult eps stream) traces
   return (conjunct traceModels)
@@ -245,9 +246,12 @@ data SEvalOptimizationStrategy a where
   Group :: Ord a => SEvalOptimizationStrategy a
 
 optimizeSymbolicStream ::
-  SEvalOptimizationStrategy a
-  -> SerialLogging (Result a)
-  -> LoggingT IO (SerialLogging (Result a))
+  ( MonadIO m
+  , MonadLogger m
+  )
+  => SEvalOptimizationStrategy a
+  -> S.SerialT m (Result a)
+  -> m (S.SerialT m (Result a))
 optimizeSymbolicStream None  s = return s
 optimizeSymbolicStream Group s = SU.take groupOptimization s
 
@@ -256,6 +260,8 @@ expectDP ::
   , GroupBy a
   , Match (Val a) b
   , Show input
+  , MonadIO m
+  , MonadLogger m
   )
   => IO (Similar input) -- ^The input generator
   -> (Similar input -> ( Term (WithPos DPCheckF) (InstrDist a)
@@ -264,57 +270,72 @@ expectDP ::
   -> SEvalOptimizationStrategy b -- ^Optimization strategy for stream of symbolic results.
   -> Int -- ^Number of sampled traces.
   -> Double -- ^Expected privacy cost.
-  -> IO Bool
+  -> m Bool
 expectDP gen prog symOptStrat ntrials eps = do
-  inputs <- gen
-  runStderrColoredLoggingWarnT $ $(logInfo) (pack $ printf "testing with inputs %s" (show inputs))
+  inputs <- liftIO gen
+  $(logInfo) (pack $ printf "testing with inputs %s" (show inputs))
   let (concrete, symbolic) = prog inputs
-  models <- approxProof concrete symbolic symOptStrat ntrials eps runStderrColoredLoggingWarnT
-  results <- mapM (\mdl -> checkConsistency [mdl] 0) models
-  -- TODO: use parallelization here to speed up, the current version of Z3 no
-  -- longer crashes when we use multiple threads...
+  models <- approxProof concrete symbolic symOptStrat ntrials eps
+  results <- liftIO $ mapM (\mdl -> checkConsistency [mdl] 0) models
   return $ all (== Ok) results
+
+expectNotDP ::
+  ( Show a
+  , GroupBy a
+  , Match (Val a) b
+  , Show input
+  , MonadIO m
+  , MonadLogger m
+  )
+  => IO (Similar input) -- ^The input generator
+  -> (Similar input -> ( Term (WithPos DPCheckF) (InstrDist a)
+                       , Term (WithPos DPCheckF) (SymM b))
+     ) -- ^The function that applies the program under test to two similar inputs.
+  -> SEvalOptimizationStrategy b -- ^Optimization strategy for stream of symbolic results.
+  -> Int -- ^Number of sampled traces.
+  -> Int -- ^Number of tests before we give up.
+  -> Double -- ^Expected privacy cost.
+  -> m Bool
+expectNotDP gen prog symOptStrat ntrials ntests eps =
+  flip runContT return $ do
+  r <- callCC $ \escape -> do
+    forM [0..ntests] $ \idx -> do
+      $(logInfo) (pack $ printf "expecting failure, test %d" idx)
+      inputs <- liftIO gen
+      $(logInfo) (pack $ printf "testing with inputs %s" (show inputs))
+      let (concrete, symbolic) = prog inputs
+      models <- approxProof concrete symbolic symOptStrat ntrials eps
+      results <- liftIO $ mapM (\mdl -> checkConsistency [mdl] 0) models
+      case any (== Inconsistent) results of
+        True -> escape [True]
+        False -> return False
+  return (and r)
 
 -- |Top-level API for building an SMT model that is the approximate pointwise
 -- equality proof, using the concrete and symbolic version of the same program.
--- TODO: need a few more tunable knobs.
--- 1. pre-optimization
 approxProof ::
-  forall a b.
+  forall m a b.
   ( Show a
   , GroupBy a
   , Match (Val a) b
+  , MonadIO m
+  , MonadLogger m
   )
   => Term (WithPos DPCheckF) (InstrDist a)
   -> Term (WithPos DPCheckF) (SymM      b)
   -> SEvalOptimizationStrategy b
   -> Int
   -> Double
-  -> (forall a. LoggingT IO a -> IO a)
-  -> IO (V.Vector SBool)
-approxProof concrete symbolic symOptStrat ntrials eps runLogger = do
-  bucket <- profile ntrials concrete
-  optStream <- runLogger $ optimizeSymbolicStream symOptStrat (seval (xtoCxt symbolic))
-  models <- runLogger $
-            (fmap snd . M.toList) <$>
+  -> m (V.Vector SBool)
+approxProof concrete symbolic symOptStrat ntrials eps = do
+  bucket <- liftIO $ profile ntrials concrete
+  $(logInfo) (pack $ printf "bucket has size = %d" (length bucket))
+  optStream <- optimizeSymbolicStream symOptStrat (seval (xtoCxt symbolic))
+  models <- (fmap snd . M.toList) <$>
             mapM (\concrete -> conjunctAllTraces concrete optStream eps) bucket
   return (V.fromList models)
 
-approxProofVerbose ::
-  forall a b.
-  ( Show a
-  , GroupBy a
-  , Match (Val a) b
-  )
-  => Term (WithPos DPCheckF) (InstrDist a)
-  -> Term (WithPos DPCheckF) (SymM      b)
-  -> SEvalOptimizationStrategy b
-  -> Int
-  -> Double
-  -> IO (V.Vector SBool)
-approxProofVerbose concrete symbolic symOptStrat ntrials eps =
-  approxProof concrete symbolic symOptStrat ntrials eps runStderrColoredLoggingT
-
+{-
 -- |Find the index of a matching group of trace, using binary search.
 binSearch :: MatchOrd k b => V.Vector (k, v) -> b -> Maybe Int
 binSearch arr k =
@@ -335,6 +356,7 @@ binSearch arr k =
                  LT -> go (mid+1) end
                  EQ -> go start mid
                  GT -> go start mid
+-}
 
 instance GroupBy Int where
   type Key Int = Int
@@ -356,6 +378,13 @@ instance GroupBy Bool where
 
   key = id
   val = id
+
+instance GroupBy a => GroupBy (Maybe a) where
+  type Key (Maybe a) = Maybe (Key a)
+  type Val (Maybe a) = Maybe (Val a)
+
+  key = fmap key
+  val = fmap val
 
 instance Ord a => GroupBy (InstrValue a) where
   type Key (InstrValue a) = DistShape a

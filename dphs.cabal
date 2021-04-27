@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: ccb5ac1c6c5fbed57dbcd14c34166d7f32f919019cc3bc8201542a365c37ea3f
+-- hash: ad1101d4bcd965ef0f3f8a1c0c33e6c478287509465a8858cdfeccff29ad7b77
 
 name:           dphs
 version:        0.1.0.0
@@ -59,6 +59,7 @@ library
   ghc-options: -Wall -Wno-partial-type-signatures -Wno-name-shadowing -fwarn-tabs -fwarn-incomplete-uni-patterns -fwarn-incomplete-record-updates -optP-Wno-nonportable-include-path
   build-depends:
       ansi-wl-pprint >=0.6.9 && <0.7
+    , async >=2.2.3 && <2.3
     , base >=4.8 && <5
     , bytestring >=0.10.8.2 && <0.11
     , compdata >=0.12 && <1.0
@@ -88,6 +89,7 @@ executable dphs-exe
   ghc-options: -Wall -Wno-partial-type-signatures -Wno-name-shadowing -fwarn-tabs -fwarn-incomplete-uni-patterns -fwarn-incomplete-record-updates -optP-Wno-nonportable-include-path -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       ansi-wl-pprint >=0.6.9 && <0.7
+    , async >=2.2.3 && <2.3
     , base >=4.8 && <5
     , bytestring >=0.10.8.2 && <0.11
     , compdata >=0.12 && <1.0
@@ -120,10 +122,11 @@ test-suite dphs-test
   hs-source-dirs:
       test
   default-extensions: DataKinds DeriveGeneric DuplicateRecordFields FlexibleContexts TypeApplications DeriveFunctor DeriveFoldable DeriveTraversable TypeOperators ApplicativeDo LambdaCase GeneralizedNewtypeDeriving TypeFamilies ScopedTypeVariables RankNTypes FlexibleInstances DeriveDataTypeable QuasiQuotes TemplateHaskell ConstraintKinds UndecidableInstances MultiParamTypeClasses KindSignatures FunctionalDependencies DataKinds GADTs StandaloneDeriving ViewPatterns CPP PartialTypeSignatures PolyKinds QuantifiedConstraints DerivingVia BangPatterns PatternSynonyms DuplicateRecordFields OverloadedLabels LambdaCase TypeFamilyDependencies OverloadedStrings
-  ghc-options: -Wall -Wno-partial-type-signatures -Wno-name-shadowing -fwarn-tabs -fwarn-incomplete-uni-patterns -fwarn-incomplete-record-updates -optP-Wno-nonportable-include-path -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wno-partial-type-signatures -Wno-name-shadowing -fwarn-tabs -fwarn-incomplete-uni-patterns -fwarn-incomplete-record-updates -optP-Wno-nonportable-include-path
   build-depends:
       QuickCheck >=2.14.2 && <2.15
     , ansi-wl-pprint >=0.6.9 && <0.7
+    , async >=2.2.3 && <2.3
     , base >=4.8 && <5
     , bytestring >=0.10.8.2 && <0.11
     , compdata >=0.12 && <1.0

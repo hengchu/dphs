@@ -9,6 +9,7 @@ import Control.Monad.IO.Class
 
 import Data.DPHS.DPCheck
 import Data.DPHS.Examples.DPCheck
+import Data.DPHS.Generator
 import Data.DPHS.Logging
 import Data.DPHS.SolverZ3
 import Data.DPHS.Symbolic
@@ -52,12 +53,12 @@ approxProofTests = describe "Data.DPHS.Testing.approxProof" $ do
         xs2 = [2,1,3,5,4]
     solverResults <- liftIO $ do
       models <-
-        approxProof
-          (toDeepRepr' $ rnm xs1)
-          (toDeepRepr' $ rnm xs2)
-          Group
-          100 2.0
-          runStderrColoredLoggingWarnT
+        runStderrColoredLoggingWarnT $
+          approxProof
+            (toDeepRepr' $ rnm xs1)
+            (toDeepRepr' $ rnm xs2)
+            Group
+            100 2.0
       mapM (\mdl -> checkConsistency [mdl] 0) models
     solverResults `shouldSatisfy` (all (\r -> r == Ok))
 
@@ -66,12 +67,12 @@ approxProofTests = describe "Data.DPHS.Testing.approxProof" $ do
         xs2 = [2,1,3,4,5]
     solverResults <- liftIO $ do
       models <-
-        approxProof
-          (toDeepRepr' $ rnm xs1)
-          (toDeepRepr' $ rnm xs2)
-          Group
-          100 0.5
-          runStderrColoredLoggingWarnT
+        runStderrColoredLoggingWarnT $
+          approxProof
+            (toDeepRepr' $ rnm xs1)
+            (toDeepRepr' $ rnm xs2)
+            Group
+            100 0.5
       mapM (\mdl -> checkConsistency [mdl] 0) models
     solverResults `shouldSatisfy` (any (\r -> r == Inconsistent))
 
@@ -80,13 +81,13 @@ approxProofTests = describe "Data.DPHS.Testing.approxProof" $ do
         xs2 = [2,1,2,5,4,5,8,11]
     solverResults <- liftIO $ do
       models <-
-        approxProof
-          (toDeepRepr' $ svBoolean xs1 7 2)
-          (toDeepRepr' $ svBoolean xs2 7 2)
-          Group
-          500
-          1.0
-          runStderrColoredLoggingWarnT
+        runStderrColoredLoggingWarnT $
+          approxProof
+            (toDeepRepr' $ svBoolean xs1 7 2)
+            (toDeepRepr' $ svBoolean xs2 7 2)
+            Group
+            500
+            1.0
       mapM (\mdl -> checkConsistency [mdl] 0) models
     solverResults `shouldSatisfy` (all (== Ok))
 
@@ -95,12 +96,41 @@ approxProofTests = describe "Data.DPHS.Testing.approxProof" $ do
         xs2 = [2,1,2,5,4,5,8,11]
     solverResults <- liftIO $ do
       models <-
-        approxProof
-          (toDeepRepr' $ svBoolean xs1 7 2)
-          (toDeepRepr' $ svBoolean xs2 7 2)
-          Group
-          500
-          0.1
-          runStderrColoredLoggingWarnT
+        runStderrColoredLoggingWarnT $
+          approxProof
+            (toDeepRepr' $ svBoolean xs1 7 2)
+            (toDeepRepr' $ svBoolean xs2 7 2)
+            Group
+            500
+            0.1
       mapM (\mdl -> checkConsistency [mdl] 0) models
     solverResults `shouldSatisfy` (any (== Inconsistent))
+
+expectDPTests :: SpecWith (Arg Expectation)
+expectDPTests = describe "Data.DPHS.Testing.expectDP" $ do
+  it "successfully accepts rnm" $ do
+    isDP <- runStderrColoredLoggingWarnT $ expectDP (lInfList 0 1 1.0) rnmTester Group 100 2.0
+    isDP `shouldBe` True
+
+  it "successfully accepts svBoolean" $ do
+    isDP <- runStderrColoredLoggingWarnT $ expectDP (lInfList 10 0.1 1.0) (svBooleanTester 9.5 2) Group 100 1.0
+    isDP `shouldBe` True
+
+  it "successfully accepts svNumeric" $ do
+    isDP <- runStderrColoredLoggingWarnT $ expectDP (lInfList 10 0.1 1.0) (svNumericTester 9.5 2) Group 100 2.0
+    isDP `shouldBe` True
+
+expectNotDPTests :: SpecWith (Arg Expectation)
+expectNotDPTests = describe "Data.DPHS.Testing.expectNotDP" $ do
+  it "successfully rejects rnm with low budget" $ do
+    notDP <- runStderrColoredLoggingWarnT $ expectNotDP (lInfList 0 1 1.0) rnmTester Group 100 20 1.0
+    notDP `shouldBe` True
+
+  it "successfully rejects svBoolean with low budget" $ do
+    notDP <- runStderrColoredLoggingWarnT $ expectNotDP (lInfList 10 0.1 1.0) (svBooleanTester 9.5 2) Group 500 20 0.2
+    notDP `shouldBe` True
+
+  -- takes too long to run on CI
+  -- it "successfully rejects svBooleanUnbounded" $ do
+  --   notDP <- runStderrColoredLoggingWarnT $ expectNotDP (lInfList 10 0.1 1.0) (svBooleanUnboundedTester 9.5) None 500 20 2.0
+  --   notDP `shouldBe` True

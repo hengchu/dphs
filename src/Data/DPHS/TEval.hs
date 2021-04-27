@@ -207,5 +207,9 @@ eval (project @(ListF :&: Pos) -> Just (Nil :&: _pos)) = DL.empty
 eval (project @(ListF :&: Pos) -> Just (Cons hd tl :&: _pos)) = DL.cons (eval hd) (eval tl)
 eval (project @(ListF :&: Pos) -> Just (Snoc hd tl :&: _pos)) = DL.snoc (eval hd) (eval tl)
 
+-- All MaybeF cases.
+eval (project @(MaybeF :&: Pos) -> Just (Nothing_ :&: _pos)) = Nothing
+eval (project @(MaybeF :&: Pos) -> Just (Just_ a :&: _pos))  = Just (eval a)
+
 eval (Term (projectA -> _other DCO.:&: pos)) =
   error $ "eval: unhandled syntactic form at position " ++ show pos

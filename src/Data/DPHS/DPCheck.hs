@@ -83,11 +83,26 @@ iASnoc ::
   ) => p -> Cxt h f x (DList a) -> Cxt h f x a -> Cxt h f x (DList a)
 iASnoc p hd tl = Term (injectA p (inj (Snoc hd tl)))
 
+data MaybeF :: (* -> *) -> * -> * where
+  Nothing_ :: MaybeF r (Maybe a)
+  Just_    :: r a -> MaybeF r (Maybe a)
+$(derive [makeShowHF, makeEqHF, makeOrdHF,
+          makeHFunctor, makeHFoldable, makeHTraversable]
+         [''MaybeF])
+
+iANothing_ :: (MaybeF :<: s, DistAnn s p f) => p -> Cxt h f x (Maybe a)
+iANothing_ p = Term (injectA p (inj Nothing_))
+
+iAJust_ :: (MaybeF :<: s, DistAnn s p f) => p -> Cxt h f x a -> Cxt h f x (Maybe a)
+iAJust_ p a = Term (injectA p (inj (Just_ a)))
+
 type DPCheckF = ArithF :+: CompareF
-                :+: EffF :+: XLambdaF :+: MonadF :+: ListF
+                :+: EffF :+: XLambdaF :+: MonadF
+                :+: ListF :+: MaybeF
 
 type NDPCheckF = ArithF :+: CompareF
-                 :+: EffF :+: LambdaF :+: MonadF :+: ListF
+                 :+: EffF :+: LambdaF :+: MonadF
+                 :+: ListF :+: MaybeF
 
 instance
   ( EffF :<: tgt
@@ -136,6 +151,18 @@ snoc ::
   , Typeable a
   ) => Term (WithPos DPCheckF) (DList a) -> Term (WithPos DPCheckF) a -> Term (WithPos DPCheckF) (DList a)
 snoc = iASnoc (fromCallStack callStack)
+
+nothing ::
+  ( HasCallStack
+  , Typeable a
+  ) => Term (WithPos DPCheckF) (Maybe a)
+nothing = iANothing_ (fromCallStack callStack)
+
+just ::
+  ( HasCallStack
+  , Typeable a
+  ) => Term (WithPos DPCheckF) a -> Term (WithPos DPCheckF) (Maybe a)
+just a = iAJust_ (fromCallStack callStack) a
 
 data SymInstr = SymInstr {
   siSample :: SReal

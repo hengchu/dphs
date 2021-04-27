@@ -94,3 +94,5 @@ main = hspec $ do
   SolverZ3Tests.consistencyTests
   TestingTests.coupleTests
   TestingTests.approxProofTests
+  TestingTests.expectDPTests
+  TestingTests.expectNotDPTests

@@ -5,12 +5,13 @@ import Type.Reflection
 
 import Data.Comp.Multi
 
-import Data.DPHS.SrcLoc
 import Data.DPHS.DPCheck
-import Data.DPHS.TEval
-import Data.DPHS.Syntax
-import Data.DPHS.Syntactic
 import Data.DPHS.Generator
+import Data.DPHS.SrcLoc
+import Data.DPHS.Symbolic
+import Data.DPHS.Syntactic
+import Data.DPHS.Syntax
+import Data.DPHS.TEval
 
 type DPCheck m num = ( num ~ Noise m
                      , CheckBool (Cmp num)
@@ -96,3 +97,113 @@ svBooleanAux (x:xs) width  t c acc = do
   if_ (xNoised .> t)
       (svBooleanAux xs width t (c-1) (acc `snoc` ctrue))
       (svBooleanAux xs width t c     (acc `snoc` cfalse))
+
+svBooleanUnboundedTester ::
+  Double
+  -> Similar [Double]
+  -> ( Term (WithPos DPCheckF) (InstrDist (DList Bool))
+     , Term (WithPos DPCheckF) (SymM      (DList Bool))
+     )
+svBooleanUnboundedTester threshold similar =
+  ( toDeepRepr' $ svBooleanUnbounded (fmap realToFrac $ left similar)  (realToFrac threshold)
+  , toDeepRepr' $ svBooleanUnbounded (fmap realToFrac $ right similar) (realToFrac threshold)
+  )
+
+svBooleanUnbounded :: forall m num.
+  DPCheck m num
+  => [Term (WithPos DPCheckF) num]
+  -> Term (WithPos DPCheckF) num
+  -> EmMon (Term (WithPos DPCheckF)) m (DList Bool)
+svBooleanUnbounded xs thresh = do
+  thresh' <- laplace thresh 1.0
+  svBooleanUnboundedAux xs 1.0 thresh' nil
+
+svBooleanUnboundedAux :: forall m num.
+  DPCheck m num
+  => [Term (WithPos DPCheckF) num]
+  -> Double
+  -> Term (WithPos DPCheckF) num
+  -> Term (WithPos DPCheckF) (DList Bool)
+  -> EmMon (Term (WithPos DPCheckF)) m (DList Bool)
+svBooleanUnboundedAux []     _width _ acc = return acc
+svBooleanUnboundedAux (x:xs) width  t acc = do
+  xNoised <- laplace x width
+  if_ (xNoised .> t)
+      (svBooleanUnboundedAux xs width t (acc `snoc` ctrue))
+      (svBooleanUnboundedAux xs width t (acc `snoc` cfalse))
+
+svNumericTester ::
+  Double
+  -> Int
+  -> Similar [Double]
+  -> ( Term (WithPos DPCheckF) (InstrDist (DList (Maybe (InstrValue Double))))
+     , Term (WithPos DPCheckF) (SymM      (DList (Maybe SReal)))
+     )
+svNumericTester threshold count similar =
+  ( toDeepRepr' $ svNumeric (fmap realToFrac $ left similar)  (realToFrac threshold) count
+  , toDeepRepr' $ svNumeric (fmap realToFrac $ right similar) (realToFrac threshold) count
+  )
+
+svNumeric :: forall m num.
+  DPCheck m num
+  => [Term (WithPos DPCheckF) num]
+  -> Term (WithPos DPCheckF) num
+  -> Int
+  -> EmMon (Term (WithPos DPCheckF)) m (DList (Maybe num))
+svNumeric xs thresh count = do
+  thresh' <- laplace thresh 2.0
+  svNumericAux xs (4.0 * realToFrac count) thresh' count nil
+
+svNumericAux :: forall m num.
+  DPCheck m num
+  => [Term (WithPos DPCheckF) num]
+  -> Double
+  -> Term (WithPos DPCheckF) num
+  -> Int
+  -> Term (WithPos DPCheckF) (DList (Maybe num))
+  -> EmMon (Term (WithPos DPCheckF)) m (DList (Maybe num))
+svNumericAux []     _width _ _ acc = return acc
+svNumericAux _      _width _ 0 acc = return acc
+svNumericAux (x:xs) width  t c acc = do
+  xNoised <- laplace x width
+  if_ (xNoised .> t)
+      (laplace x width >>= \xFreshNoised -> svNumericAux xs width t (c-1) (acc `snoc` just xFreshNoised))
+      (svNumericAux xs width t c     (acc `snoc` nothing))
+
+svNumericBugTester ::
+  Double
+  -> Int
+  -> Similar [Double]
+  -> ( Term (WithPos DPCheckF) (InstrDist (DList (Maybe (InstrValue Double))))
+     , Term (WithPos DPCheckF) (SymM      (DList (Maybe SReal)))
+     )
+svNumericBugTester threshold count similar =
+  ( toDeepRepr' $ svNumericBug (fmap realToFrac $ left similar)  (realToFrac threshold) count
+  , toDeepRepr' $ svNumericBug (fmap realToFrac $ right similar) (realToFrac threshold) count
+  )
+
+svNumericBug :: forall m num.
+  DPCheck m num
+  => [Term (WithPos DPCheckF) num]
+  -> Term (WithPos DPCheckF) num
+  -> Int
+  -> EmMon (Term (WithPos DPCheckF)) m (DList (Maybe num))
+svNumericBug xs thresh count = do
+  thresh' <- laplace thresh 2.0
+  svNumericBugAux xs (4.0 * realToFrac count) thresh' count nil
+
+svNumericBugAux :: forall m num.
+  DPCheck m num
+  => [Term (WithPos DPCheckF) num]
+  -> Double
+  -> Term (WithPos DPCheckF) num
+  -> Int
+  -> Term (WithPos DPCheckF) (DList (Maybe num))
+  -> EmMon (Term (WithPos DPCheckF)) m (DList (Maybe num))
+svNumericBugAux []     _width _ _ acc = return acc
+svNumericBugAux _      _width _ 0 acc = return acc
+svNumericBugAux (x:xs) width  t c acc = do
+  xNoised <- laplace x width
+  if_ (xNoised .> t)
+      (svNumericBugAux xs width t (c-1) (acc `snoc` just xNoised))
+      (svNumericBugAux xs width t c     (acc `snoc` nothing))
